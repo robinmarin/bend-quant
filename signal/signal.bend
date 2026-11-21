@@ -395,6 +395,26 @@ def lead(p: Panel, +h: U32) -> Panel:
   +k = U32.to_nat(U32.min(h, t))
   Panel{t, n, lead.rows(rows, k, List.replicate(List<&2, F32>, k, List.replicate(F32, U32.to_nat(n), nan())))}
 
+# ---------------------------------------------------------------- forward IC
+# The entry point for evaluating a signal. ret holds one-period returns: row j is
+# the return over (j - 1, j]. h counts extra periods, so the nearest return a
+# date can meet is the next one; a same-day pairing has no spelling here.
+
+def fwd.rows(rs: List<&2, List<&2, F32>>, +h: Nat, +t: U32, +n: U32) -> List<&2, List<&2, F32>>:
+  lead.rows(rs, 1n+h, List.replicate(List<&2, F32>, Nat.min(1n+h, U32.to_nat(t)), List.replicate(F32, U32.to_nat(n), nan())))
+
+def fwd(p: Panel, +h: Nat) -> Panel:
+  Panel{+t, +n, rs} = p
+  Panel{t, n, fwd.rows(rs, h, t, n)}
+
+# IC i is the rank IC of signal row i against return row i + 1 + h (law forward_row).
+def forward_rank_ic(x: Panel, ret: Panel, +h: Nat) -> Maybe<&2, List<&2, F32>>:
+  rank_ic(x, fwd(ret, h))
+
+# The same with Pearson.
+def forward_ic(x: Panel, ret: Panel, +h: Nat) -> Maybe<&2, List<&2, F32>>:
+  ic(x, fwd(ret, h))
+
 # ---------------------------------------------------------------- summary
 
 type Tally is Data:
@@ -441,3 +461,288 @@ def summary.k(st: Tally, +xs: List<&2, F32>) -> Maybe<&2, Summary>:
 # None with fewer than 2 non-NaN ICs.
 def summary(+xs: List<&2, F32>) -> Maybe<&2, Summary>:
   summary.k(tally(xs, Tally{0.0, 0, 0}), xs)
+
+# ---------------------------------------------------------------- transforms
+# Each transform is a scan over the dates or a map over the rows. LAWS.bend
+# proves both shapes causal: output rows 0..k-1 depend only on input rows
+# 0..k-1, so nothing built from them can look ahead.
+
+# state S; next folds row i into it; out builds output row i from the new state and row i
+def scan(~S: Data, ~next: S -> List<&2, F32> -> S, ~out: S -> List<&2, F32> -> List<&2, F32>, xs: List<&2, List<&2, F32>>, +s: S) -> List<&2, List<&2, F32>>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      +s2 = next(s, x)
+      out(s2, x) <> scan(~S, ~next, ~out, t, s2)
+
+# row i of the output is f(c, row i)
+def rowwise(~C: Data, ~f: C -> List<&2, F32> -> List<&2, F32>, xs: List<&2, List<&2, F32>>, +c: C) -> List<&2, List<&2, F32>>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, t}:
+      f(c, x) <> rowwise(~C, ~f, t, c)
+
+# ---- one row; NaN stays NaN
+
+def row.affine(xs: List<&2, F32>, +a: F32, +b: F32) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, t}:
+      ((x - a) / b : F32) <> row.affine(t, a, b)
+
+def row.mean.of(st: Tally) -> F32:
+  Tally{s, n, _} = st
+  (s / U32.to_f32(n) : F32)
+
+def row.mean(+xs: List<&2, F32>) -> F32:
+  row.mean.of(tally(xs, Tally{0.0, 0, 0}))
+
+def row.sd.of(st: Tally, +xs: List<&2, F32>, +m: F32) -> F32:
+  Tally{_, n, _} = st
+  F32.sqrt((ss(xs, m, 0.0) / (U32.to_f32(n) - 1.0) : F32))
+
+# (x - mean) / sample sd over the present names; NaN when fewer than 2 or sd = 0
+def row.zscore(+xs: List<&2, F32>) -> List<&2, F32>:
+  +m = row.mean(xs)
+  row.affine(xs, m, row.sd.of(tally(xs, Tally{0.0, 0, 0}), xs, m))
+
+def row.demean(+xs: List<&2, F32>) -> List<&2, F32>:
+  row.affine(xs, row.mean(xs), 1.0)
+
+# -- percentile rank: average rank / count, in (0, 1], as pandas rank(pct=True)
+
+def fill.idx.add(st: Fill, +v: F32, +i: U32) -> Fill:
+  Fill{buf, m} = st
+  fill.ok(is_nan(v), buf, m, v, U32.to_f32(i))
+
+def fill.idx(k: Nat, xs: List<&2, F32>, +i: U32, st: Fill) -> Fill:
+  match k xs:
+    case 0n _:
+      st
+    case 1n+p Nil{}:
+      st
+    case 1n+p Con{v, t}:
+      fill.idx(p, t, (i + 1 : U32), fill.idx.add(st, v, i))
+
+type Sc is Type:
+  Sc{buf: Array<F32>, out: Array<F32>}
+
+def sc.b(p: Array<F32> & F32, out: Array<F32>, +idx: F32, +mf: F32) -> Sc:
+  (buf, r) = p
+  Sc{buf, Array.set(F32, out, F32.to_u32(idx), ((r + 1.0) / mf : F32))}
+
+def sc.a(p: Array<F32> & F32, out: Array<F32>, +k: U32, +mf: F32) -> Sc:
+  (buf, idx) = p
+  sc.b(Array.get(F32, buf, ((2 * k) + 1 : U32)), out, idx, mf)
+
+def sc.add(st: Sc, +k: U32, +mf: F32) -> Sc:
+  Sc{buf, out} = st
+  sc.a(Array.get(F32, buf, (2 * k : U32)), out, k, mf)
+
+# after rank_pass, pair k is (name index, average rank); write rank / m at the index
+def scatter(fuel: Nat, st: Sc, +k: U32, +mf: F32) -> Array<F32>:
+  match fuel:
+    case 0n:
+      Sc{_, out} = st
+      out
+    case 1n+p:
+      scatter(p, sc.add(st, k, mf), (k + 1 : U32), mf)
+
+type Rd is Type:
+  Rd{a: Array<F32>, acc: List<&2, F32>}
+
+def rd.put(p: Array<F32> & F32, acc: List<&2, F32>) -> Rd:
+  (a, v) = p
+  Rd{a, v <> acc}
+
+def rd.add(st: Rd, +i: U32) -> Rd:
+  Rd{a, acc} = st
+  rd.put(Array.get(F32, a, i), acc)
+
+# slots n-1 down to 0, prepended, so the list comes out in slot order
+def read_back(fuel: Nat, st: Rd, +i: U32) -> List<&2, F32>:
+  match fuel:
+    case 0n:
+      Rd{_, acc} = st
+      acc
+    case 1n+p:
+      read_back(p, rd.add(st, i), (i - 1 : U32))
+
+def row.rank.of(st: Fill, +n: U32) -> List<&2, F32>:
+  Fill{buf, +m} = st
+  out = scatter(U32.to_nat(m), Sc{rank_pass(buf, m), Array.new(F32, depth(n), nan())}, 0, U32.to_f32(m))
+  read_back(U32.to_nat(n), Rd{out, Nil{}}, (n - 1 : U32))
+
+def row.rank(+xs: List<&2, F32>, +n: U32) -> List<&2, F32>:
+  row.rank.of(fill.idx(U32.to_nat(n), xs, 0, Fill{Array.new(F32, depth(n), 0.0), 0}), n)
+
+# -- winsorize: clip at the q and 1 - q quantiles (linear, as pandas quantile)
+
+def q.at.b(p: Array<F32> & F32, +lo: F32, +t: F32) -> Array<F32> & F32:
+  (a, hi) = p
+  (a, (lo + (t * (hi - lo))) : F32)
+
+def q.at.a(p: Array<F32> & F32, +j: U32, +t: F32) -> Array<F32> & F32:
+  (a, lo) = p
+  q.at.b(Array.get(F32, a, (2 * j : U32)), lo, t)
+
+def q.at.pick(empty: Bool, a: Array<F32>, +i: U32, +j: U32, +t: F32) -> Array<F32> & F32:
+  match empty:
+    case True{}:
+      (a, nan())
+    case False{}:
+      q.at.a(Array.get(F32, a, (2 * i : U32)), j, t)
+
+# the q quantile of m sorted keys; NaN for m = 0
+def q.at(a: Array<F32>, +m: U32, +q: F32) -> Array<F32> & F32:
+  +h = ((U32.to_f32(m) - 1.0) * q : F32)
+  +i = F32.to_u32(F32.floor(h))
+  +j = U32.min((i + 1 : U32), (m - 1 : U32))
+  q.at.pick(U32.is_eq(m, 0), a, i, j, (h - F32.floor(h) : F32))
+
+def clip(xs: List<&2, F32>, +lo: F32, +hi: F32) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      Bool.pick(F32, is_nan(x), x, F32.max(lo, F32.min(x, hi))) <> clip(t, lo, hi)
+
+def wz.hi(p: Array<F32> & F32, +xs: List<&2, F32>, +lo: F32) -> List<&2, F32>:
+  (_, hi) = p
+  clip(xs, lo, hi)
+
+def wz.lo(p: Array<F32> & F32, +xs: List<&2, F32>, +m: U32, +q: F32) -> List<&2, F32>:
+  (a, lo) = p
+  wz.hi(q.at(a, m, (1.0 - q : F32)), xs, lo)
+
+def wz.of(st: Fill, +xs: List<&2, F32>, +q: F32) -> List<&2, F32>:
+  Fill{buf, +m} = st
+  wz.lo(q.at(hsort(buf, m), m, q), xs, m, q)
+
+def row.winsorize(+xs: List<&2, F32>, +n: U32, +q: F32) -> List<&2, F32>:
+  wz.of(fill.idx(U32.to_nat(n), xs, 0, Fill{Array.new(F32, depth(n), 0.0), 0}), xs, q)
+
+# ---- row-wise panel transforms
+
+type Cfg is Data:
+  Cfg{n: U32, q: F32}
+
+def zscore.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
+  row.zscore(x)
+
+def demean.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
+  row.demean(x)
+
+def rank.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
+  Cfg{n, _} = c
+  row.rank(x, n)
+
+def winsorize.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
+  Cfg{n, q} = c
+  row.winsorize(x, n, q)
+
+# Each date: (x - mean) / sd across names.
+def zscore(p: Panel) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, rowwise(~Cfg, ~zscore.f, rows, Cfg{n, 0.0})}
+
+# Each date: x - mean across names.
+def demean(p: Panel) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, rowwise(~Cfg, ~demean.f, rows, Cfg{n, 0.0})}
+
+# Each date: percentile rank across names, in (0, 1].
+def rank(p: Panel) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, rowwise(~Cfg, ~rank.f, rows, Cfg{n, 0.0})}
+
+# Each date: clip to that date's q and 1 - q quantiles.
+def winsorize(p: Panel, +q: F32) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, rowwise(~Cfg, ~winsorize.f, rows, Cfg{n, q})}
+
+# ---- time-series panel transforms, per name across dates
+
+type Ew is Data:
+  Ew{a: F32, s: List<&2, F32>}
+
+def ew.one(+p: F32, +v: F32, +a: F32) -> F32:
+  Bool.pick(F32, is_nan(v), p, Bool.pick(F32, is_nan(p), v, ((a * v) + ((1.0 - a) * p) : F32)))
+
+def ew.row(ps: List<&2, F32>, xs: List<&2, F32>, +a: F32) -> List<&2, F32>:
+  match ps xs:
+    case Con{p, pt} Con{v, vt}:
+      ew.one(p, v, a) <> ew.row(pt, vt, a)
+    case Con{_, _} Nil{}:
+      Nil{}
+    case Nil{} _:
+      Nil{}
+
+def ew.next(st: Ew, x: List<&2, F32>) -> Ew:
+  Ew{+a, s} = st
+  Ew{a, ew.row(s, x, a)}
+
+def ew.out(st: Ew, x: List<&2, F32>) -> List<&2, F32>:
+  Ew{_, s} = st
+  s
+
+# s_i = a x_i + (1 - a) s_(i-1) per name. A NaN carries the last value on, and
+# a name is NaN until its first value, as pandas ewm(alpha=a, adjust=False, ignore_na=True).
+def ewma(p: Panel, +a: F32) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, scan(~Ew, ~ew.next, ~ew.out, rows, Ew{a, List.replicate(F32, U32.to_nat(n), nan())})}
+
+type Win is Data:
+  Win{w: Nat, rows: List<&2, List<&2, F32>>}
+
+def win.next(st: Win, x: List<&2, F32>) -> Win:
+  Win{+w, rows} = st
+  Win{w, List.take(&2, List<&2, F32>, x <> rows, w)}
+
+type Cols is Data:
+  Cols{s: List<&2, F32>, c: List<&2, F32>}
+
+def col.cons(+s: F32, +c: F32, r: Cols) -> Cols:
+  Cols{st, ct} = r
+  Cols{s <> st, c <> ct}
+
+def col.add(ss: List<&2, F32>, cs: List<&2, F32>, xs: List<&2, F32>) -> Cols:
+  match ss cs xs:
+    case Con{+s, st} Con{+c, ct} Con{+x, xt}:
+      col.cons(Bool.pick(F32, is_nan(x), s, (s + x : F32)), Bool.pick(F32, is_nan(x), c, (c + 1.0 : F32)), col.add(st, ct, xt))
+    case _ _ _:
+      Cols{Nil{}, Nil{}}
+
+def col.sum(rows: List<&2, List<&2, F32>>, acc: Cols) -> Cols:
+  match rows:
+    case Nil{}:
+      acc
+    case Con{r, t}:
+      Cols{s, c} = acc
+      col.sum(t, col.add(s, c, r))
+
+def col.div(ss: List<&2, F32>, cs: List<&2, F32>) -> List<&2, F32>:
+  match ss cs:
+    case Con{s, st} Con{c, ct}:
+      (s / c : F32) <> col.div(st, ct)
+    case _ _:
+      Nil{}
+
+def win.out.of(r: Cols) -> List<&2, F32>:
+  Cols{s, c} = r
+  col.div(s, c)
+
+def win.out(st: Win, x: List<&2, F32>) -> List<&2, F32>:
+  Win{_, rows} = st
+  +n = List.length(&2, F32, x)
+  win.out.of(col.sum(rows, Cols{List.replicate(F32, n, 0.0), List.replicate(F32, n, 0.0)}))
+
+# Mean over the last w dates per name, skipping NaN; NaN only when all w are
+# missing, as pandas rolling(w, min_periods=1).mean().
+# ponytail: re-sums the window each date, O(w) per value; running sums if w gets large
+def rolling_mean(p: Panel, +w: Nat) -> Panel:
+  Panel{+t, +n, rows} = p
+  Panel{t, n, scan(~Win, ~win.next, ~win.out, rows, Win{w, Nil{}})}

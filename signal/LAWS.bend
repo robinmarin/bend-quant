@@ -118,3 +118,110 @@ law lead_panel:
   for i: Nat
   for e: {Nat.is_le(1n+Nat.add(U32.to_nat(U32.min(h, t)), i), List.length(&2, List<&2, F32>, xs)) == True{} : Bool}
   {List.get(&2, List<&2, F32>, rows(S.lead(S.Panel{t, n, xs}, h)), i) == List.get(&2, List<&2, F32>, xs, Nat.add(U32.to_nat(U32.min(h, t)), i)) : Maybe<&2, List<&2, F32>>}
+
+# ---------------------------------------------------------------- forward IC
+
+def nth(m: Maybe<&2, List<&2, F32>>, +i: Nat) -> Maybe<&2, F32>:
+  match m:
+    case None{}:
+      None{}
+    case Some{xs}:
+      List.get(&2, F32, xs, i)
+
+# IC i of forward_rank_ic is the rank IC of signal row i against return row
+# i + 1 + h, whenever that return row exists. No h reaches row i itself.
+law forward_row:
+  for +tx: U32
+  for +nx: U32
+  for +tr: U32
+  for +nr: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +rs: List<&2, List<&2, F32>>
+  for +h: Nat
+  for +i: Nat
+  for e: {Bool.and(U32.is_eq(tx, tr), U32.is_eq(nx, nr)) == True{} : Bool}
+  for l: {Nat.is_le(1n+Nat.add(1n+h, i), List.length(&2, List<&2, F32>, rs)) == True{} : Bool}
+  {nth(S.forward_rank_ic(S.Panel{tx, nx, xs}, S.Panel{tr, nr, rs}, h), i) == at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, rs, Nat.add(1n+h, i)), nx, True{}) : Maybe<&2, F32>}
+
+# ---------------------------------------------------------------- transforms
+# Causal: the first k output rows depend only on the first k input rows. A
+# transform that read a later date, a full-sample mean or a centered window,
+# could not satisfy this.
+
+law scan_causal:
+  for ~T: Data
+  for ~next: T -> List<&2, F32> -> T
+  for ~out: T -> List<&2, F32> -> List<&2, F32>
+  for +xs: List<&2, List<&2, F32>>
+  for +s: T
+  for +k: Nat
+  {List.take(&2, List<&2, F32>, S.scan(~T, ~next, ~out, xs, s), k) == S.scan(~T, ~next, ~out, List.take(&2, List<&2, F32>, xs, k), s) : List<&2, List<&2, F32>>}
+
+law rowwise_causal:
+  for ~C: Data
+  for ~f: C -> List<&2, F32> -> List<&2, F32>
+  for +xs: List<&2, List<&2, F32>>
+  for +c: C
+  for +k: Nat
+  {List.take(&2, List<&2, F32>, S.rowwise(~C, ~f, xs, c), k) == S.rowwise(~C, ~f, List.take(&2, List<&2, F32>, xs, k), c) : List<&2, List<&2, F32>>}
+
+def fmap(~C: Data, ~f: C -> List<&2, F32> -> List<&2, F32>, +c: C, m: Maybe<&2, List<&2, F32>>) -> Maybe<&2, List<&2, F32>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{x}:
+      Some{f(c, x)}
+
+# A row-wise transform reads one date: row i of the output is f of row i alone.
+law rowwise_row:
+  for ~C: Data
+  for ~f: C -> List<&2, F32> -> List<&2, F32>
+  for +xs: List<&2, List<&2, F32>>
+  for +c: C
+  for +i: Nat
+  {List.get(&2, List<&2, F32>, S.rowwise(~C, ~f, xs, c), i) == fmap(~C, ~f, c, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+
+law zscore_row:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +i: Nat
+  {List.get(&2, List<&2, F32>, rows(S.zscore(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.zscore.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+
+law demean_row:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +i: Nat
+  {List.get(&2, List<&2, F32>, rows(S.demean(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.demean.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+
+law rank_row:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +i: Nat
+  {List.get(&2, List<&2, F32>, rows(S.rank(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.rank.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+
+law winsorize_row:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +q: F32
+  for +i: Nat
+  {List.get(&2, List<&2, F32>, rows(S.winsorize(S.Panel{t, n, xs}, q)), i) == fmap(~S.Cfg, ~S.winsorize.f, S.Cfg{n, q}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+
+law ewma_causal:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +a: F32
+  for +k: Nat
+  {List.take(&2, List<&2, F32>, rows(S.ewma(S.Panel{t, n, xs}, a)), k) == rows(S.ewma(S.Panel{t, n, List.take(&2, List<&2, F32>, xs, k)}, a)) : List<&2, List<&2, F32>>}
+
+law rolling_mean_causal:
+  for +t: U32
+  for +n: U32
+  for +xs: List<&2, List<&2, F32>>
+  for +w: Nat
+  for +k: Nat
+  {List.take(&2, List<&2, F32>, rows(S.rolling_mean(S.Panel{t, n, xs}, w)), k) == rows(S.rolling_mean(S.Panel{t, n, List.take(&2, List<&2, F32>, xs, k)}, w)) : List<&2, List<&2, F32>>}

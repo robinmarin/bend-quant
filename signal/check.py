@@ -6,6 +6,7 @@ every per-date IC and the rank IC summary. Exits non-zero on any mismatch.
 import os, subprocess, sys, tempfile
 import numpy as np
 from scipy import stats
+import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "out", "check")
@@ -91,6 +92,38 @@ def case(name, x, y, h=0):
     return ok
 
 
+def transforms(name, x):
+    """Every transform of x against pandas, row-wise on dates and time-series per name."""
+    x = x.astype(np.float32)
+    t, n = x.shape
+    with tempfile.TemporaryDirectory() as d:
+        xp = os.path.join(d, "x.f32")
+        x.astype("<f4").tofile(xp)
+        out = subprocess.run([BIN, xp, str(t), str(n)], capture_output=True, text=True, check=True).stdout
+    got = {}
+    for line in filter(None, map(str.strip, out.splitlines())):
+        tag, *vals = line.split()
+        got.setdefault(tag, []).append([float(v) for v in vals])
+    df = pd.DataFrame(x.astype(np.float64))
+    rows = df.T  # columns are dates, for row-wise ops
+    want = {
+        "zscore": ((rows - rows.mean()) / rows.std(ddof=1)).T,
+        "demean": (rows - rows.mean()).T,
+        "rank": rows.rank(pct=True).T,
+        "winsorize": rows.clip(rows.quantile(0.1), rows.quantile(0.9), axis=1).T,
+        "ewma": df.ewm(alpha=0.3, adjust=False, ignore_na=True).mean(),
+        "rolling": df.rolling(3, min_periods=1).mean(),
+    }
+    ok = True
+    for tag, w in want.items():
+        g = np.array(got.get(tag, []))
+        good = g.shape == w.shape and np.allclose(g, w.to_numpy(), atol=1e-5, rtol=1e-5, equal_nan=True)
+        err = np.nanmax(np.abs(g - w.to_numpy())) if g.shape == w.shape else float("inf")
+        print(f"{'ok  ' if good else 'FAIL'} {name + ' ' + tag:<28} t={t:<4} n={n:<4} max|err|={err:.1e}")
+        ok = ok and good
+    return ok
+
+
 def main():
     build()
     rng = np.random.default_rng(7)
@@ -124,6 +157,10 @@ def main():
     res.append(case("lead 1", x, y, h=1))
     res.append(case("lead 5, ties and NaN", xn, np.round(yn, 0), h=5))
     res.append(case("lead past the end", x, y, h=50))
+
+    xs = x.copy(); xs[rng.random(x.shape) < 0.2] = np.nan
+    xs[:, 3] = np.nan; xs[5] = np.nan; xs[7, :55] = np.nan   # a dead name, a dead date, a 2-name date
+    res.append(transforms("tf", np.round(xs, 1)))
 
     got = run(x.astype(np.float32), y.astype(np.float32), ty=39)
     ok = got["none"] == ["rank", "ic"]

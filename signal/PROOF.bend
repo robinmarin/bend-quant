@@ -132,3 +132,63 @@ def Laws.lead_row(xs, k, pad, i, h):
 def Laws.lead_panel(t, n, xs, h, i, e):
   +k = U32.to_nat(U32.min(h, t))
   Laws.lead_row(xs, k, List.replicate(List<&2, F32>, k, List.replicate(F32, U32.to_nat(n), S.nan())), i, e)
+
+# ---------------------------------------------------------------- forward IC
+
+def Laws.forward_row(tx, nx, tr, nr, xs, rs, h, i, e, l):
+  +f = S.fwd.rows(rs, h, tr, nr)
+  +pad = List.replicate(List<&2, F32>, Nat.min(1n+h, U32.to_nat(tr)), List.replicate(F32, U32.to_nat(nr), S.nan()))
+  +want = Laws.at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, rs, Nat.add(1n+h, i)), nx, True{})
+  %Equal.sym(Maybe<&2, List<&2, F32>>, S.rank_ic(S.Panel{tx, nx, xs}, S.Panel{tr, nr, f}), Some{S.seq(S.zip(xs, f, nx, True{}))}, Laws.rank_ic_rows(tx, nx, tr, nr, xs, f, e)) : {Laws.nth(_, i) == want : Maybe<&2, F32>}
+  %Equal.sym(Maybe<&2, F32>, List.get(&2, F32, S.seq(S.zip(xs, f, nx, True{})), i), Laws.at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, f, i), nx, True{}), Laws.ic_row(xs, f, nx, True{}, i)) : {_ == want : Maybe<&2, F32>}
+  %Laws.lead_row(rs, 1n+h, pad, i, l) : {Laws.at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, f, i), nx, True{}) == Laws.at(List.get(&2, List<&2, F32>, xs, i), _, nx, True{}) : Maybe<&2, F32>}
+  {==}
+
+# ---------------------------------------------------------------- transforms
+
+def Laws.scan_causal(T, next, out, xs, s, k):
+  match xs k:
+    case Nil{} _:
+      {==}
+    case Con{x, t} 0n:
+      {==}
+    case Con{+x, +t} 1n+p:
+      %Laws.scan_causal(~T, ~next, ~out, t, next(s, x), p) : {out(next(s, x), x) <> List.take(&2, List<&2, F32>, S.scan(~T, ~next, ~out, t, next(s, x)), p) == out(next(s, x), x) <> _ : List<&2, List<&2, F32>>}
+      {==}
+
+def Laws.rowwise_causal(C, f, xs, c, k):
+  match xs k:
+    case Nil{} _:
+      {==}
+    case Con{x, t} 0n:
+      {==}
+    case Con{+x, +t} 1n+p:
+      %Laws.rowwise_causal(~C, ~f, t, c, p) : {f(c, x) <> List.take(&2, List<&2, F32>, S.rowwise(~C, ~f, t, c), p) == f(c, x) <> _ : List<&2, List<&2, F32>>}
+      {==}
+
+def Laws.rowwise_row(C, f, xs, c, i):
+  match xs i:
+    case Nil{} _:
+      {==}
+    case Con{x, t} 0n:
+      {==}
+    case Con{x, t} 1n+p:
+      Laws.rowwise_row(~C, ~f, t, c, p)
+
+def Laws.zscore_row(t, n, xs, i):
+  Laws.rowwise_row(~S.Cfg, ~S.zscore.f, xs, S.Cfg{n, 0.0}, i)
+
+def Laws.demean_row(t, n, xs, i):
+  Laws.rowwise_row(~S.Cfg, ~S.demean.f, xs, S.Cfg{n, 0.0}, i)
+
+def Laws.rank_row(t, n, xs, i):
+  Laws.rowwise_row(~S.Cfg, ~S.rank.f, xs, S.Cfg{n, 0.0}, i)
+
+def Laws.winsorize_row(t, n, xs, q, i):
+  Laws.rowwise_row(~S.Cfg, ~S.winsorize.f, xs, S.Cfg{n, q}, i)
+
+def Laws.ewma_causal(t, n, xs, a, k):
+  Laws.scan_causal(~S.Ew, ~S.ew.next, ~S.ew.out, xs, S.Ew{a, List.replicate(F32, U32.to_nat(n), S.nan())}, k)
+
+def Laws.rolling_mean_causal(t, n, xs, w, k):
+  Laws.scan_causal(~S.Win, ~S.win.next, ~S.win.out, xs, S.Win{w, Nil{}}, k)
