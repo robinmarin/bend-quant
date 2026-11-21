@@ -3,8 +3,8 @@ import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
 
 # Rows are dates, oldest first; column j is the same name on every date. NaN = missing.
-type Panel is Type:
-  Panel{t: U32, n: U32, rows: List<&1, A.F32Array>}
+type Panel is Data:
+  Panel{t: U32, n: U32, rows: List<&2, List<&2, F32>>}
 
 # IC statistics over the non-NaN dates. ir is per period; t = ir * sqrt(count).
 type Summary is Data:
@@ -17,59 +17,42 @@ def is_nan(+x: F32) -> Bool:
   F32.is_ne(x, x)
 
 # ---------------------------------------------------------------- building a panel
-# Bend rejects a destructure of a computed pair and any call cycle, so each loop
-# below keeps its state in one record and calls a non-recursive `.add` helper.
 
-type Rows is Type:
-  Rows{n: U32, t: U32, rows: List<&1, A.F32Array>, ok: Bool}
-
-def Panel.rows.add(r: A.F32Array & U32, st: Rows) -> Rows:
-  (a, +m) = r
-  Rows{+n, t, rows, ok} = st
-  Rows{n, (t + 1 : U32), a <> rows, Bool.and(ok, U32.is_eq(m, n))}
-
-def Panel.rows.go(xs: List<&1, A.F32Array>, st: Rows) -> Rows:
+def Panel.rows.ok(xs: List<&2, List<&2, F32>>, +n: Nat) -> Bool:
   match xs:
     case Nil{}:
-      st
-    case Con{h, rest}:
-      Panel.rows.go(rest, Panel.rows.add(A.length(h), st))
+      True{}
+    case Con{r, t}:
+      Bool.and(Nat.is_eq(List.length(&2, F32, r), n), Panel.rows.ok(t, n))
 
-def Panel.rows.pick(ok: Bool, +t: U32, +n: U32, rows: List<&1, A.F32Array>) -> Maybe<&1, Panel>:
+def Panel.rows.pick(ok: Bool, +rows: List<&2, List<&2, F32>>, +n: Nat) -> Maybe<&2, Panel>:
   match ok:
     case True{}:
-      Some{Panel{t, n, List.reverse(&1, A.F32Array, rows)}}
+      Some{Panel{U32.from_nat(List.length(&2, List<&2, F32>, rows)), U32.from_nat(n), rows}}
     case False{}:
       None{}
 
-def Panel.rows.fin(st: Rows) -> Maybe<&1, Panel>:
-  Rows{n, t, rows, ok} = st
-  Panel.rows.pick(ok, t, n, rows)
-
-def Panel.from_rows.first(r: A.F32Array & U32, rest: List<&1, A.F32Array>) -> Maybe<&1, Panel>:
-  (a, +n) = r
-  Panel.rows.fin(Panel.rows.go(rest, Rows{n, 1, a <> Nil{}, True{}}))
-
 # None when two rows differ in length.
-def Panel.from_rows(xs: List<&1, A.F32Array>) -> Maybe<&1, Panel>:
+def Panel.from_rows(xs: List<&2, List<&2, F32>>) -> Maybe<&2, Panel>:
   match xs:
     case Nil{}:
       Some{Panel{0, 0, Nil{}}}
-    case Con{h, rest}:
-      Panel.from_rows.first(A.length(h), rest)
+    case Con{+r, +t}:
+      +n = List.length(&2, F32, r)
+      Panel.rows.pick(Panel.rows.ok(r <> t, n), r <> t, n)
 
 type Flat is Type:
-  Flat{a: A.F32Array, rows: List<&1, A.F32Array>}
+  Flat{a: A.F32Array, rows: List<&2, List<&2, F32>>}
 
-def Panel.flat.add(r: A.F32Array & A.F32Array, rows: List<&1, A.F32Array>) -> Flat:
+def Panel.flat.add(r: A.F32Array & A.F32Array, rows: List<&2, List<&2, F32>>) -> Flat:
   (a, row) = r
-  Flat{a, row <> rows}
+  Flat{a, A.to_list(row) <> rows}
 
-def Panel.flat.go(k: Nat, st: Flat, +n: U32, +i: U32) -> List<&1, A.F32Array>:
+def Panel.flat.go(k: Nat, st: Flat, +n: U32, +i: U32) -> List<&2, List<&2, F32>>:
   match k:
     case 0n:
       Flat{_, rows} = st
-      List.reverse(&1, A.F32Array, rows)
+      List.reverse(&2, List<&2, F32>, rows)
     case 1n+p:
       Flat{a, rows} = st
       Panel.flat.go(p, Panel.flat.add(A.slice(a, (i * n : U32), n), rows), n, (i + 1 : U32))
@@ -80,48 +63,33 @@ def Panel.from_flat(a: A.F32Array, +t: U32, +n: U32) -> Panel:
 
 # ---------------------------------------------------------------- one date
 # The complete (x, y) pairs of a date go into a scratch Array<F32>, interleaved:
-# slot 2k is the key, 2k+1 the payload. Sorting packed F32Array cells would cost
-# a lane pick per access; the copy is O(n) against the sort's O(n log n).
+# slot 2k is the key, 2k+1 the payload, and the heapsort below runs in place.
 
 type Fill is Type:
-  Fill{x: A.F32Array, y: A.F32Array, buf: Array<F32>, m: U32}
+  Fill{buf: Array<F32>, m: U32}
 
-def fill.ok(bad: Bool, x: A.F32Array, y: A.F32Array, buf: Array<F32>, +m: U32, +xv: F32, +yv: F32) -> Fill:
+def fill.ok(bad: Bool, buf: Array<F32>, +m: U32, +xv: F32, +yv: F32) -> Fill:
   match bad:
     case True{}:
-      Fill{x, y, buf, m}
+      Fill{buf, m}
     case False{}:
-      Fill{x, y, Array.set(F32, Array.set(F32, buf, (2 * m : U32), xv), ((2 * m) + 1 : U32), yv), (m + 1 : U32)}
+      Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), xv), ((2 * m) + 1 : U32), yv), (m + 1 : U32)}
 
-def fill.put(xm: Maybe<&2, F32>, ym: Maybe<&2, F32>, x: A.F32Array, y: A.F32Array, buf: Array<F32>, +m: U32) -> Fill:
-  match xm ym:
-    case Some{+xv} Some{+yv}:
-      fill.ok(Bool.or(is_nan(xv), is_nan(yv)), x, y, buf, m, xv, yv)
-    case Some{_} None{}:
-      Fill{x, y, buf, m}
-    case None{} Some{_}:
-      Fill{x, y, buf, m}
-    case None{} None{}:
-      Fill{x, y, buf, m}
+def fill.add(st: Fill, +xv: F32, +yv: F32) -> Fill:
+  Fill{buf, m} = st
+  fill.ok(Bool.or(is_nan(xv), is_nan(yv)), buf, m, xv, yv)
 
-def fill.y(r: A.F32Array & Maybe<&2, F32>, x: A.F32Array, buf: Array<F32>, +m: U32, xm: Maybe<&2, F32>) -> Fill:
-  (y, ym) = r
-  fill.put(xm, ym, x, y, buf, m)
-
-def fill.x(r: A.F32Array & Maybe<&2, F32>, y: A.F32Array, buf: Array<F32>, +m: U32, +i: U32) -> Fill:
-  (x, xm) = r
-  fill.y(A.get(y, i), x, buf, m, xm)
-
-def fill.add(st: Fill, +i: U32) -> Fill:
-  Fill{x, y, buf, m} = st
-  fill.x(A.get(x, i), y, buf, m, i)
-
-def fill.go(k: Nat, st: Fill, +i: U32) -> Fill:
-  match k:
-    case 0n:
+# at most k pairs, so a row longer than the panel's n can't overrun the buffer
+def fill.go(k: Nat, xs: List<&2, F32>, ys: List<&2, F32>, st: Fill) -> Fill:
+  match k xs ys:
+    case 0n _ _:
       st
-    case 1n+p:
-      fill.go(p, fill.add(st, i), (i + 1 : U32))
+    case 1n+p Nil{} _:
+      st
+    case 1n+p Con{_, _} Nil{}:
+      st
+    case 1n+p Con{xv, xt} Con{yv, yt}:
+      fill.go(p, xt, yt, fill.add(st, xv, yv))
 
 # smallest d with 2^d >= 2n, at least 1
 def depth(+n: U32) -> Nat:
@@ -318,72 +286,86 @@ def date.m(small: Bool, buf: Array<F32>, +m: U32, rank: Bool) -> F32:
           pearson(buf, m)
 
 def date.fin(st: Fill, +rank: Bool) -> F32:
-  Fill{_, _, buf, +m} = st
+  Fill{buf, +m} = st
   date.m(U32.is_lt(m, 3), buf, m, rank)
 
 # NaN when fewer than 3 names are present in both rows
-def date_ic(x: A.F32Array, y: A.F32Array, +n: U32, +rank: Bool) -> F32:
-  date.fin(fill.go(U32.to_nat(n), Fill{x, y, Array.new(F32, depth(n), 0.0), 0}, 0), rank)
+def date_ic(x: List<&2, F32>, y: List<&2, F32>, +n: U32, +rank: Bool) -> F32:
+  date.fin(fill.go(U32.to_nat(n), x, y, Fill{Array.new(F32, depth(n), 0.0), 0}), rank)
 
 # ---------------------------------------------------------------- over dates
 
-type XY is Type:
-  XY{x: A.F32Array, y: A.F32Array}
+# Every def from here down is written for the laws in LAWS.bend: plain structural
+# recursion, so the parallel version can be proved equal to the sequential one.
 
-def zip(xs: List<&1, A.F32Array>, ys: List<&1, A.F32Array>, acc: List<&1, XY>) -> List<&1, XY>:
+type XY is Data:
+  XY{x: List<&2, F32>, y: List<&2, F32>, n: U32, rank: Bool}
+
+def date_xy(p: XY) -> F32:
+  XY{x, y, n, rank} = p
+  date_ic(x, y, n, rank)
+
+# row i of xs with row i of ys, up to the shorter list
+def zip(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>, +n: U32, +rank: Bool) -> List<&2, XY>:
   match xs ys:
     case Con{x, xt} Con{y, yt}:
-      zip(xt, yt, XY{x, y} <> acc)
+      XY{x, y, n, rank} <> zip(xt, yt, n, rank)
     case Con{_, _} Nil{}:
-      List.reverse(&1, XY, acc)
+      Nil{}
     case Nil{} _:
-      List.reverse(&1, XY, acc)
+      Nil{}
 
-def ics(ps: List<&1, XY>, +n: U32, +rank: Bool, acc: List<&2, F32>) -> List<&2, F32>:
+# the sequential spec: one IC per pair, in order
+def seq(ps: List<&2, XY>) -> List<&2, F32>:
   match ps:
     case Nil{}:
-      List.reverse(&2, F32, acc)
+      Nil{}
     case Con{p, t}:
-      XY{x, y} = p
-      ics(t, n, rank, date_ic(x, y, n, rank) <> acc)
+      date_xy(p) <> seq(t)
 
-type Two is Type:
-  Two{l: List<&1, XY>, r: List<&1, XY>}
+type Two is Data:
+  Two{l: List<&2, XY>, r: List<&2, XY>}
 
-def split(k: Nat, xs: List<&1, XY>, acc: List<&1, XY>) -> Two:
-  match k:
-    case 0n:
-      Two{List.reverse(&1, XY, acc), xs}
-    case 1n+p:
-      match xs:
-        case Nil{}:
-          Two{List.reverse(&1, XY, acc), Nil{}}
-        case Con{h, t}:
-          split(p, t, h <> acc)
+def split.cons(h: XY, two: Two) -> Two:
+  Two{l, r} = two
+  Two{h <> l, r}
 
-# fork-join over dates: 2^(d+1) balanced tasks, results kept in date order
-def ics.par(+d: Nat, two: Two, +h: U32, +r: U32, +n: U32, +rank: Bool) -> List<&2, F32>:
+# Two{take(k, xs), drop(k, xs)} in one pass
+def split(k: Nat, xs: List<&2, XY>) -> Two:
+  match k xs:
+    case 0n Nil{}:
+      Two{Nil{}, Nil{}}
+    case 0n Con{h, t}:
+      Two{Nil{}, h <> t}
+    case 1n+p Nil{}:
+      Two{Nil{}, Nil{}}
+    case 1n+p Con{h, t}:
+      split.cons(h, split(p, t))
+
+# fork-join over dates: 2^(d+1) tasks. h and r only balance the split; any
+# values give the same list (law par_seq).
+def par(+d: Nat, two: Two, +h: U32, +r: U32) -> List<&2, F32>:
   match d:
     case 0n:
       Two{xl, xr} = two
-      a b = ics(xl, n, rank, Nil{}) ics(xr, n, rank, Nil{})
+      a b = seq(xl) seq(xr)
       List.append(&2, F32, a, b)
     case 1n+e:
       Two{xl, xr} = two
       +hl = (h >> 1n : U32)
       +hr = (r >> 1n : U32)
-      a b = ics.par(e, split(U32.to_nat(hl), xl, Nil{}), hl, (h - hl : U32), n, rank) ics.par(e, split(U32.to_nat(hr), xr, Nil{}), hr, (r - hr : U32), n, rank)
+      a b = par(e, split(U32.to_nat(hl), xl), hl, (h - hl : U32)) par(e, split(U32.to_nat(hr), xr), hr, (r - hr : U32))
       List.append(&2, F32, a, b)
 
 # ponytail: fixed 64 tasks once t >= 64, 2 below; tune per machine if it matters
-def ics.top(ps: List<&1, XY>, +t: U32, +n: U32, +rank: Bool) -> List<&2, F32>:
+def ics(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>, +t: U32, +n: U32, +rank: Bool) -> List<&2, F32>:
   +h = (t >> 1n : U32)
-  ics.par(Bool.pick(Nat, U32.is_lt(t, 64), 0n, 5n), split(U32.to_nat(h), ps, Nil{}), h, (t - h : U32), n, rank)
+  par(Bool.pick(Nat, U32.is_lt(t, 64), 0n, 5n), split(U32.to_nat(h), zip(xs, ys, n, rank)), h, (t - h : U32))
 
-def ic.chk(ok: Bool, rx: List<&1, A.F32Array>, ry: List<&1, A.F32Array>, +t: U32, +n: U32, +rank: Bool) -> Maybe<&2, List<&2, F32>>:
+def ic.chk(ok: Bool, rx: List<&2, List<&2, F32>>, ry: List<&2, List<&2, F32>>, +t: U32, +n: U32, +rank: Bool) -> Maybe<&2, List<&2, F32>>:
   match ok:
     case True{}:
-      Some{ics.top(zip(rx, ry, Nil{}), t, n, rank)}
+      Some{ics(rx, ry, t, n, rank)}
     case False{}:
       None{}
 
@@ -399,6 +381,19 @@ def rank_ic(x: Panel, y: Panel) -> Maybe<&2, List<&2, F32>>:
 # One Pearson IC per date; None when the shapes differ.
 def ic(x: Panel, y: Panel) -> Maybe<&2, List<&2, F32>>:
   ic.go(x, y, False{})
+
+# ---------------------------------------------------------------- lead
+
+def lead.rows(xs: List<&2, List<&2, F32>>, k: Nat, pad: List<&2, List<&2, F32>>) -> List<&2, List<&2, F32>>:
+  List.append(&2, List<&2, F32>, List.drop(&2, List<&2, F32>, xs, k), pad)
+
+# Row i of the result is row i + h of p (law lead_row); the last min(h, t) rows
+# are NaN. With p a panel of one-period returns, lead(p, 1) pairs date i with
+# the return over the period after it.
+def lead(p: Panel, +h: U32) -> Panel:
+  Panel{+t, +n, rows} = p
+  +k = U32.to_nat(U32.min(h, t))
+  Panel{t, n, lead.rows(rows, k, List.replicate(List<&2, F32>, k, List.replicate(F32, U32.to_nat(n), nan())))}
 
 # ---------------------------------------------------------------- summary
 

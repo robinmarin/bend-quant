@@ -40,13 +40,13 @@ def summary(ics):
     return [m, sd, m / sd, m / sd * np.sqrt(len(v)), (v > 0).mean(), len(v)]
 
 
-def run(x, y, ty=None):
+def run(x, y, ty=None, h=0):
     t, n = x.shape
     with tempfile.TemporaryDirectory() as d:
         xp, yp = os.path.join(d, "x.f32"), os.path.join(d, "y.f32")
         x.astype("<f4").tofile(xp)
         y.astype("<f4").tofile(yp)
-        out = subprocess.run([BIN, xp, yp, xp, yp, str(t), str(n), str(ty or t)],
+        out = subprocess.run([BIN, xp, yp, str(t), str(n), str(ty or t), str(h)],
                              capture_output=True, text=True, check=True).stdout
     got = {"rank": [], "ic": [], "sum": None, "none": []}
     for line in filter(None, map(str.strip, out.splitlines())):
@@ -65,10 +65,16 @@ def close(a, b, tol=TOL):
     return a.shape == b.shape and np.allclose(a, b, atol=tol, rtol=0, equal_nan=True)
 
 
-def case(name, x, y):
+def lead(y, h):
+    """Row i becomes row i + h; the last min(h, t) rows are NaN."""
+    k = min(h, len(y))
+    return np.vstack([y[k:], np.full((k, y.shape[1]), np.nan, y.dtype)])
+
+
+def case(name, x, y, h=0):
     x, y = x.astype(np.float32), y.astype(np.float32)
-    got = run(x, y)
-    wr, wi = want(x, y, True), want(x, y, False)
+    got = run(x, y, h=h)
+    wr, wi = want(x, lead(y, h), True), want(x, lead(y, h), False)
     ok = close(got["rank"], wr) and close(got["ic"], wi)
     ws, gs = summary(wr), got["sum"]
     ok = ok and (ws is None) == (gs is None)
@@ -114,6 +120,10 @@ def main():
     big_x = rng.standard_normal((300, 400)); big_y = 0.05 * big_x + rng.standard_normal((300, 400))
     big_x[rng.random(big_x.shape) < 0.05] = np.nan
     res.append(case("parallel path, t >= 64", np.round(big_x, 2), big_y))
+
+    res.append(case("lead 1", x, y, h=1))
+    res.append(case("lead 5, ties and NaN", xn, np.round(yn, 0), h=5))
+    res.append(case("lead past the end", x, y, h=50))
 
     got = run(x.astype(np.float32), y.astype(np.float32), ty=39)
     ok = got["none"] == ["rank", "ic"]

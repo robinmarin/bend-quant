@@ -5,15 +5,11 @@
 ## The type
 
 ```bend
-import bend-kit-f32array@0.2.1.0/f32array.bend as A
-
-type Panel is Type:
-  Panel{t: U32, n: U32, rows: List<&1, A.F32Array>}
+type Panel is Data:
+  Panel{t: U32, n: U32, rows: List<&2, List<&2, F32>>}
 ```
 
-A panel is a list of rows, oldest date first. Each row is one date's cross-section, an `F32Array` of length `n`. Column `j` is the same name on every date.
-
-The panel carries `t` and `n` because `List.length` consumes an affine list. Without `t`, a parallel split would have to walk the list and rebuild it.
+A panel is a list of rows, oldest date first. Each row is one date's cross-section, a list of `n` floats. Column `j` is the same name on every date.
 
 ## Decisions
 
@@ -21,7 +17,9 @@ The panel carries `t` and `n` because `List.length` consumes an affine list. Wit
 
 **NaN marks a missing value.** pandas and numpy do the same, and NaN survives a numpy `.tofile` round trip into `F32Array` (checked in a spike). Bend detects it with `F32.is_ne(x, x)`. A separate mask would double the memory and need its own alignment checks. A name that enters or leaves the universe is NaN on the dates it isn't trading. Every function drops the names that are NaN in either input for that date, so it computes on complete pairs.
 
-**Rows are `F32Array`.** bend-kit's `f32array` already reads numpy files, maps, folds, and sums pairwise, in parallel too. Reusing it keeps `signal` compatible with anything else built on the kit. It packs 8 floats into each `Array` slot, which is fine for a sweep and wrong for a sort. Sorts therefore copy the complete pairs of a date into a scratch `Array<F32>`, key and payload interleaved as in `bench/array_f32.bend`, and heapsort that. The copy is O(n) against the sort's O(n log n).
+**Rows are lists, not `F32Array`.** The first version used bend-kit's `F32Array`. It is a `Type`, so every value can be used once, and Bend enforces that inside proofs too. A proof that a list of rows survives a split and an append has to mention the list in two lemmas, and the checker rejects it. A lemma can't take the list as erased either, since a proof can only match on live values. As `List<&2, F32>` the rows are `Data`, the proofs can name them freely, and a loaded panel can be reused. The cost was measured on two 5000 × 1000 panels: 280 MB resident, about 28 bytes per value against 4, and the same speed, 0.32 s on 8 cores. `F32Array` stays at the edge, for reading files.
+
+Sorts copy the complete pairs of a date into a scratch `Array<F32>`, key and payload interleaved as in `bench/array_f32.bend`, and heapsort that. The copy is O(n) against the sort's O(n log n).
 
 **Labels stay outside.** The panel holds numbers only. The caller keeps the date and ticker lists that index rows and columns. Bend strings are slow lists of characters, and no IC needs a ticker.
 
@@ -58,13 +56,12 @@ Hidden helpers cover the array plumbing: fold, map, and sort over a scratch `Arr
 
 ## Laws
 
-These go in `LAWS.bend`. The checker doesn't run `F32` arithmetic, so the float laws can only be fixtures, as in `f32array`. The structural ones can be real proofs.
+The checker doesn't run `F32` arithmetic, so no law can state an IC value. Laws over floats can only be fixtures, as in `f32array`. What a law can state for every input is the structure: which rows reach which IC, in what order, and how far `lead` shifts. README.md lists the laws that hold now.
 
-- `rank` returns a permutation of 0..m-1 when a row has no ties.
-- rank IC doesn't change under a strictly increasing transform of either input (fixtures).
-- every IC lies in [-1, 1] (fixtures).
-- a z-scored row has mean 0 and sd 1, to within rounding (fixtures).
-- `from_rows` gives `None` exactly when two rows differ in length.
+Still to prove:
+
+- a name enters a date's IC exactly when it is non-missing in both rows. The NaN test is `F32.is_ne(x, x)`, which is opaque, so the law has to be generic over the predicate.
+- ranks match the counting definition, 2·rankᵢ = 2·#{xⱼ < xᵢ} + #{xⱼ = xᵢ} − 1, for any total order. bend-mathlib proves a merge sort sorted and a permutation, which is the place to start.
 
 ## Open questions
 
