@@ -7,6 +7,7 @@ import os, subprocess, sys, tempfile
 import numpy as np
 from scipy import stats
 import pandas as pd
+from statsmodels.regression.linear_model import OLS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "out", "check")
@@ -49,16 +50,27 @@ def run(x, y, ty=None, h=0):
         y.astype("<f4").tofile(yp)
         out = subprocess.run([BIN, xp, yp, str(t), str(n), str(ty or t), str(h)],
                              capture_output=True, text=True, check=True).stdout
-    got = {"rank": [], "ic": [], "sum": None, "none": []}
+    got = {"rank": [], "ic": [], "sum": None, "none": [], "nw": {}}
     for line in filter(None, map(str.strip, out.splitlines())):
         tag, *vals = line.split()
         if vals == ["none"]:
             got["none"].append(tag)
+        elif tag == "nw":
+            got["nw"][int(vals[0])] = None if vals[1] == "none" else float(vals[1])
         elif tag == "sum":
             got["sum"] = [float(v) for v in vals]
         else:
             got[tag].append(float(vals[0]))
     return got
+
+
+def nw(ics, lags):
+    """statsmodels HAC t of the mean, Bartlett weights, no small-sample correction."""
+    v = ics[~np.isnan(ics)]
+    if len(v) < 2:
+        return None
+    fit = OLS(v, np.ones(len(v))).fit(cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": False})
+    return float(fit.tvalues[0])
 
 
 def close(a, b, tol=TOL):
@@ -82,6 +94,9 @@ def case(name, x, y, h=0):
     if ws is not None and gs is not None:
         # relative on mean, sd and the ratios; exact on hit rate and count
         ok = ok and np.allclose(gs[:4], ws[:4], rtol=1e-4, atol=TOL) and close(gs[4:], ws[4:], 1e-6)
+    for lags in (0, 1, 5):
+        w, g = nw(wr, lags), got["nw"].get(lags)
+        ok = ok and (w is None) == (g is None) and (w is None or abs(g - w) <= 1e-4 * max(1, abs(w)))
     err = max(np.nanmax(np.abs(np.array(got["rank"]) - wr), initial=0),
               np.nanmax(np.abs(np.array(got["ic"]) - wi), initial=0))
     print(f"{'ok  ' if ok else 'FAIL'} {name:<28} t={x.shape[0]:<4} n={x.shape[1]:<4} max|err|={err:.1e}")
@@ -89,6 +104,7 @@ def case(name, x, y, h=0):
         print("  rank got ", np.round(got["rank"][:8], 6), "\n  rank want", np.round(wr[:8], 6))
         print("  ic   got ", np.round(got["ic"][:8], 6), "\n  ic   want", np.round(wi[:8], 6))
         print("  sum  got ", gs, "\n  sum  want", ws)
+        print("  nw   got ", got["nw"], "\n  nw   want", {l: nw(wr, l) for l in (0, 1, 5)})
     return ok
 
 

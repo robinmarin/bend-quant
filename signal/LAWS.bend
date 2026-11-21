@@ -50,19 +50,19 @@ law depth_zero:
 # it, in which order, and that the parallel path computes the same list.
 
 # The IC of rows mx and my, or None when either row is missing.
-def at.y(+x: List<&2, F32>, my: Maybe<&2, List<&2, F32>>, +n: U32, +rank: Bool) -> Maybe<&2, F32>:
+def at.y(+x: List<&2, F32>, my: Maybe<&2, List<&2, F32>>, +rank: Bool) -> Maybe<&2, F32>:
   match my:
     case None{}:
       None{}
     case Some{y}:
-      Some{S.date_ic(x, y, n, rank)}
+      Some{S.date_ic(x, y, rank)}
 
-def at(mx: Maybe<&2, List<&2, F32>>, my: Maybe<&2, List<&2, F32>>, +n: U32, +rank: Bool) -> Maybe<&2, F32>:
+def at(mx: Maybe<&2, List<&2, F32>>, my: Maybe<&2, List<&2, F32>>, +rank: Bool) -> Maybe<&2, F32>:
   match mx:
     case None{}:
       None{}
     case Some{x}:
-      at.y(x, my, n, rank)
+      at.y(x, my, rank)
 
 def rows(+p: S.Panel) -> List<&2, List<&2, F32>>:
   S.Panel{_, _, r} = p
@@ -72,19 +72,29 @@ def rows(+p: S.Panel) -> List<&2, List<&2, F32>>:
 law ic_row:
   for +xs: List<&2, List<&2, F32>>
   for +ys: List<&2, List<&2, F32>>
-  for +n: U32
   for +rank: Bool
   for i: Nat
-  {List.get(&2, F32, S.seq(S.zip(xs, ys, n, rank)), i) == at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, ys, i), n, rank) : Maybe<&2, F32>}
+  {List.get(&2, F32, S.pseq(~S.XY, ~F32, ~Bool, ~S.date_xy, S.zip(xs, ys), rank), i) == at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, ys, i), rank) : Maybe<&2, F32>}
 
-# The parallel fork-join over dates gives the sequential list, for every t.
+# pmap, the parallel map under the IC step and the row-wise transforms, gives
+# the same list as the plain loop pseq, for every t.
+law pmap_seq:
+  for ~A: Data
+  for ~B: Data
+  for ~C: Data
+  for ~f: C -> A -> B
+  for +xs: List<&2, A>
+  for +t: U32
+  for +c: C
+  {S.pmap(~A, ~B, ~C, ~f, xs, t, c) == S.pseq(~A, ~B, ~C, ~f, xs, c) : List<&2, B>}
+
+# So the parallel IC step gives the sequential list, for every t.
 law ics_seq:
   for +xs: List<&2, List<&2, F32>>
   for +ys: List<&2, List<&2, F32>>
   for +t: U32
-  for +n: U32
   for +rank: Bool
-  {S.ics(xs, ys, t, n, rank) == S.seq(S.zip(xs, ys, n, rank)) : List<&2, F32>}
+  {S.ics(xs, ys, t, rank) == S.pseq(~S.XY, ~F32, ~Bool, ~S.date_xy, S.zip(xs, ys), rank) : List<&2, F32>}
 
 # When the shapes match, rank_ic is that list. With ic_row: IC i is the rank IC
 # of row i of x against row i of y.
@@ -96,7 +106,7 @@ law rank_ic_rows:
   for +xs: List<&2, List<&2, F32>>
   for +ys: List<&2, List<&2, F32>>
   for e: {Bool.and(U32.is_eq(tx, ty), U32.is_eq(nx, ny)) == True{} : Bool}
-  {S.rank_ic(S.Panel{tx, nx, xs}, S.Panel{ty, ny, ys}) == Some{S.seq(S.zip(xs, ys, nx, True{}))} : Maybe<&2, List<&2, F32>>}
+  {S.rank_ic(S.Panel{tx, nx, xs}, S.Panel{ty, ny, ys}) == Some{S.pseq(~S.XY, ~F32, ~Bool, ~S.date_xy, S.zip(xs, ys), True{})} : Maybe<&2, List<&2, F32>>}
 
 # ---------------------------------------------------------------- lead
 # Row i of lead.rows(xs, k, pad) is row k + i of xs, whenever that row exists.
@@ -141,7 +151,7 @@ law forward_row:
   for +i: Nat
   for e: {Bool.and(U32.is_eq(tx, tr), U32.is_eq(nx, nr)) == True{} : Bool}
   for l: {Nat.is_le(1n+Nat.add(1n+h, i), List.length(&2, List<&2, F32>, rs)) == True{} : Bool}
-  {nth(S.forward_rank_ic(S.Panel{tx, nx, xs}, S.Panel{tr, nr, rs}, h), i) == at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, rs, Nat.add(1n+h, i)), nx, True{}) : Maybe<&2, F32>}
+  {nth(S.forward_rank_ic(S.Panel{tx, nx, xs}, S.Panel{tr, nr, rs}, h), i) == at(List.get(&2, List<&2, F32>, xs, i), List.get(&2, List<&2, F32>, rs, Nat.add(1n+h, i)), True{}) : Maybe<&2, F32>}
 
 # ---------------------------------------------------------------- transforms
 # Causal: the first k output rows depend only on the first k input rows. A
@@ -157,50 +167,54 @@ law scan_causal:
   for +k: Nat
   {List.take(&2, List<&2, F32>, S.scan(~T, ~next, ~out, xs, s), k) == S.scan(~T, ~next, ~out, List.take(&2, List<&2, F32>, xs, k), s) : List<&2, List<&2, F32>>}
 
-law rowwise_causal:
+law pseq_causal:
+  for ~A: Data
+  for ~B: Data
   for ~C: Data
-  for ~f: C -> List<&2, F32> -> List<&2, F32>
-  for +xs: List<&2, List<&2, F32>>
+  for ~f: C -> A -> B
+  for +xs: List<&2, A>
   for +c: C
   for +k: Nat
-  {List.take(&2, List<&2, F32>, S.rowwise(~C, ~f, xs, c), k) == S.rowwise(~C, ~f, List.take(&2, List<&2, F32>, xs, k), c) : List<&2, List<&2, F32>>}
+  {List.take(&2, B, S.pseq(~A, ~B, ~C, ~f, xs, c), k) == S.pseq(~A, ~B, ~C, ~f, List.take(&2, A, xs, k), c) : List<&2, B>}
 
-def fmap(~C: Data, ~f: C -> List<&2, F32> -> List<&2, F32>, +c: C, m: Maybe<&2, List<&2, F32>>) -> Maybe<&2, List<&2, F32>>:
+def fmap(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, +c: C, m: Maybe<&2, A>) -> Maybe<&2, B>:
   match m:
     case None{}:
       None{}
     case Some{x}:
       Some{f(c, x)}
 
-# A row-wise transform reads one date: row i of the output is f of row i alone.
-law rowwise_row:
+# A map reads one element: element i of the output is f of element i alone.
+law pseq_row:
+  for ~A: Data
+  for ~B: Data
   for ~C: Data
-  for ~f: C -> List<&2, F32> -> List<&2, F32>
-  for +xs: List<&2, List<&2, F32>>
+  for ~f: C -> A -> B
+  for +xs: List<&2, A>
   for +c: C
   for +i: Nat
-  {List.get(&2, List<&2, F32>, S.rowwise(~C, ~f, xs, c), i) == fmap(~C, ~f, c, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+  {List.get(&2, B, S.pseq(~A, ~B, ~C, ~f, xs, c), i) == fmap(~A, ~B, ~C, ~f, c, List.get(&2, A, xs, i)) : Maybe<&2, B>}
 
 law zscore_row:
   for +t: U32
   for +n: U32
   for +xs: List<&2, List<&2, F32>>
   for +i: Nat
-  {List.get(&2, List<&2, F32>, rows(S.zscore(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.zscore.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+  {List.get(&2, List<&2, F32>, rows(S.zscore(S.Panel{t, n, xs})), i) == fmap(~List<&2, F32>, ~List<&2, F32>, ~S.Cfg, ~S.zscore.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
 
 law demean_row:
   for +t: U32
   for +n: U32
   for +xs: List<&2, List<&2, F32>>
   for +i: Nat
-  {List.get(&2, List<&2, F32>, rows(S.demean(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.demean.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+  {List.get(&2, List<&2, F32>, rows(S.demean(S.Panel{t, n, xs})), i) == fmap(~List<&2, F32>, ~List<&2, F32>, ~S.Cfg, ~S.demean.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
 
 law rank_row:
   for +t: U32
   for +n: U32
   for +xs: List<&2, List<&2, F32>>
   for +i: Nat
-  {List.get(&2, List<&2, F32>, rows(S.rank(S.Panel{t, n, xs})), i) == fmap(~S.Cfg, ~S.rank.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+  {List.get(&2, List<&2, F32>, rows(S.rank(S.Panel{t, n, xs})), i) == fmap(~List<&2, F32>, ~List<&2, F32>, ~S.Cfg, ~S.rank.f, S.Cfg{n, 0.0}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
 
 law winsorize_row:
   for +t: U32
@@ -208,7 +222,7 @@ law winsorize_row:
   for +xs: List<&2, List<&2, F32>>
   for +q: F32
   for +i: Nat
-  {List.get(&2, List<&2, F32>, rows(S.winsorize(S.Panel{t, n, xs}, q)), i) == fmap(~S.Cfg, ~S.winsorize.f, S.Cfg{n, q}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
+  {List.get(&2, List<&2, F32>, rows(S.winsorize(S.Panel{t, n, xs}, q)), i) == fmap(~List<&2, F32>, ~List<&2, F32>, ~S.Cfg, ~S.winsorize.f, S.Cfg{n, q}, List.get(&2, List<&2, F32>, xs, i)) : Maybe<&2, List<&2, F32>>}
 
 law ewma_causal:
   for +t: U32
@@ -225,3 +239,42 @@ law rolling_mean_causal:
   for +w: Nat
   for +k: Nat
   {List.take(&2, List<&2, F32>, rows(S.rolling_mean(S.Panel{t, n, xs}, w)), k) == rows(S.rolling_mean(S.Panel{t, n, List.take(&2, List<&2, F32>, xs, k)}, w)) : List<&2, List<&2, F32>>}
+
+# ---------------------------------------------------------------- missing values
+# A name that is NaN on either side takes no part in that date's IC.
+
+# The IC of a date reads only the complete pairs: the names present on both sides.
+law date_ic_pairs:
+  for +xs: List<&2, F32>
+  for +ys: List<&2, F32>
+  for +rank: Bool
+  {S.date_ic(xs, ys, rank) == S.core(S.complete(xs, ys), rank) : F32}
+
+law complete_filter:
+  for +xs: List<&2, F32>
+  for +ys: List<&2, F32>
+  {S.complete(xs, ys) == List.filter(~S.Pr, ~S.both, S.zip2(xs, ys)) : List<&2, S.Pr>}
+
+# Where the return is NaN, the signal value can be anything: the IC is the same.
+law date_ic_missing_y:
+  for +xs: List<&2, F32>
+  for +ys: List<&2, F32>
+  for +rank: Bool
+  for +i: Nat
+  for +v: F32
+  for +y: F32
+  for h1: {List.get(&2, F32, ys, i) == Some{y} : Maybe<&2, F32>}
+  for h2: {S.is_nan(y) == True{} : Bool}
+  {S.date_ic(List.set(&2, F32, xs, i, v), ys, rank) == S.date_ic(xs, ys, rank) : F32}
+
+# Where the signal is NaN, the return can be anything: the IC is the same.
+law date_ic_missing_x:
+  for +xs: List<&2, F32>
+  for +ys: List<&2, F32>
+  for +rank: Bool
+  for +i: Nat
+  for +v: F32
+  for +x: F32
+  for h1: {List.get(&2, F32, xs, i) == Some{x} : Maybe<&2, F32>}
+  for h2: {S.is_nan(x) == True{} : Bool}
+  {S.date_ic(xs, List.set(&2, F32, ys, i, v), rank) == S.date_ic(xs, ys, rank) : F32}

@@ -24,12 +24,19 @@ def show.sum(m: Maybe<&2, S.Summary>) -> String:
         case S.Summary{mean, sd, ir, t, hit, count}:
           "sum " ++ F32.show(mean) ++ " " ++ F32.show(sd) ++ " " ++ F32.show(ir) ++ " " ++ F32.show(t) ++ " " ++ F32.show(hit) ++ " " ++ U32.show(count) ++ "\n"
 
+def show.nw(+l: Nat, m: Maybe<&2, F32>) -> String:
+  match m:
+    case None{}:
+      "nw " ++ Nat.show(l) ++ " none\n"
+    case Some{v}:
+      "nw " ++ Nat.show(l) ++ " " ++ F32.show(v) ++ "\n"
+
 def show.rank(m: Maybe<&2, List<&2, F32>>) -> String:
   match m:
     case None{}:
       "rank none\n"
     case Some{+xs}:
-      lines("rank", xs) ++ show.sum(S.summary(xs))
+      lines("rank", xs) ++ show.sum(S.summary(xs)) ++ show.nw(0n, S.nw_t(xs, 0n)) ++ show.nw(1n, S.nw_t(xs, 1n)) ++ show.nw(5n, S.nw_t(xs, 5n))
 
 def show.ic(m: Maybe<&2, List<&2, F32>>) -> String:
   match m:

@@ -79,18 +79,6 @@ def fill.add(st: Fill, +xv: F32, +yv: F32) -> Fill:
   Fill{buf, m} = st
   fill.ok(Bool.or(is_nan(xv), is_nan(yv)), buf, m, xv, yv)
 
-# at most k pairs, so a row longer than the panel's n can't overrun the buffer
-def fill.go(k: Nat, xs: List<&2, F32>, ys: List<&2, F32>, st: Fill) -> Fill:
-  match k xs ys:
-    case 0n _ _:
-      st
-    case 1n+p Nil{} _:
-      st
-    case 1n+p Con{_, _} Nil{}:
-      st
-    case 1n+p Con{xv, xt} Con{yv, yt}:
-      fill.go(p, xt, yt, fill.add(st, xv, yv))
-
 # smallest d with 2^d >= 2n, at least 1
 def depth(+n: U32) -> Nat:
   1n+U32.log2(((2 * U32.max(n, 1)) - 1 : U32))
@@ -289,49 +277,69 @@ def date.fin(st: Fill, +rank: Bool) -> F32:
   Fill{buf, +m} = st
   date.m(U32.is_lt(m, 3), buf, m, rank)
 
-# NaN when fewer than 3 names are present in both rows
-def date_ic(x: List<&2, F32>, y: List<&2, F32>, +n: U32, +rank: Bool) -> F32:
-  date.fin(fill.go(U32.to_nat(n), x, y, Fill{Array.new(F32, depth(n), 0.0), 0}), rank)
+# ---- the complete pairs of a date: the only thing an IC reads (laws date_ic_*)
 
-# ---------------------------------------------------------------- over dates
+type Pr is Data:
+  Pr{x: F32, y: F32}
 
-# Every def from here down is written for the laws in LAWS.bend: plain structural
-# recursion, so the parallel version can be proved equal to the sequential one.
-
-type XY is Data:
-  XY{x: List<&2, F32>, y: List<&2, F32>, n: U32, rank: Bool}
-
-def date_xy(p: XY) -> F32:
-  XY{x, y, n, rank} = p
-  date_ic(x, y, n, rank)
-
-# row i of xs with row i of ys, up to the shorter list
-def zip(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>, +n: U32, +rank: Bool) -> List<&2, XY>:
+# name j of xs with name j of ys, up to the shorter row
+def zip2(xs: List<&2, F32>, ys: List<&2, F32>) -> List<&2, Pr>:
   match xs ys:
     case Con{x, xt} Con{y, yt}:
-      XY{x, y, n, rank} <> zip(xt, yt, n, rank)
+      Pr{x, y} <> zip2(xt, yt)
     case Con{_, _} Nil{}:
       Nil{}
     case Nil{} _:
       Nil{}
 
-# the sequential spec: one IC per pair, in order
-def seq(ps: List<&2, XY>) -> List<&2, F32>:
+# present on both sides; y is tested first, so a NaN y decides without x
+def both(p: Pr) -> Bool:
+  Pr{+x, +y} = p
+  Bool.and(Bool.not(is_nan(y)), Bool.not(is_nan(x)))
+
+def complete(xs: List<&2, F32>, ys: List<&2, F32>) -> List<&2, Pr>:
+  List.filter(~Pr, ~both, zip2(xs, ys))
+
+def fill.pairs(ps: List<&2, Pr>, st: Fill) -> Fill:
   match ps:
     case Nil{}:
-      Nil{}
+      st
     case Con{p, t}:
-      date_xy(p) <> seq(t)
+      Pr{x, y} = p
+      Fill{buf, +m} = st
+      fill.pairs(t, Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), x), ((2 * m) + 1 : U32), y), (m + 1 : U32)})
 
-type Two is Data:
-  Two{l: List<&2, XY>, r: List<&2, XY>}
+# the IC of a list of complete pairs; NaN for fewer than 3
+def core(+ps: List<&2, Pr>, +rank: Bool) -> F32:
+  date.fin(fill.pairs(ps, Fill{Array.new(F32, depth(U32.from_nat(List.length(&2, Pr, ps))), 0.0), 0}), rank)
 
-def split.cons(h: XY, two: Two) -> Two:
+# NaN when fewer than 3 names are present in both rows
+def date_ic(x: List<&2, F32>, y: List<&2, F32>, +rank: Bool) -> F32:
+  core(complete(x, y), rank)
+
+# ---------------------------------------------------------------- over dates
+
+# ---- a proved parallel map
+# pmap forks over the elements and pseq is the plain loop; law pmap_seq says they
+# give the same list. The IC step and the row-wise transforms both run on pmap.
+
+# f(c, a) for each element a, in order
+def pseq(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, xs: List<&2, A>, +c: C) -> List<&2, B>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, t}:
+      f(c, x) <> pseq(~A, ~B, ~C, ~f, t, c)
+
+type Two<-A: Data> is Data:
+  Two{l: List<&2, A>, r: List<&2, A>}
+
+def split.cons(-A: Data, h: A, two: Two<A>) -> Two<A>:
   Two{l, r} = two
   Two{h <> l, r}
 
 # Two{take(k, xs), drop(k, xs)} in one pass
-def split(k: Nat, xs: List<&2, XY>) -> Two:
+def split(-A: Data, k: Nat, xs: List<&2, A>) -> Two<A>:
   match k xs:
     case 0n Nil{}:
       Two{Nil{}, Nil{}}
@@ -340,39 +348,62 @@ def split(k: Nat, xs: List<&2, XY>) -> Two:
     case 1n+p Nil{}:
       Two{Nil{}, Nil{}}
     case 1n+p Con{h, t}:
-      split.cons(h, split(p, t))
+      split.cons(A, h, split(A, p, t))
 
-# fork-join over dates: 2^(d+1) tasks. h and r only balance the split; any
-# values give the same list (law par_seq).
-def par(+d: Nat, two: Two, +h: U32, +r: U32) -> List<&2, F32>:
+# fork-join: 2^(d+1) tasks. h and r only balance the split; any values give
+# the same list.
+def par(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, +d: Nat, two: Two<A>, +h: U32, +r: U32, +c: C) -> List<&2, B>:
   match d:
     case 0n:
       Two{xl, xr} = two
-      a b = seq(xl) seq(xr)
-      List.append(&2, F32, a, b)
+      a b = pseq(~A, ~B, ~C, ~f, xl, c) pseq(~A, ~B, ~C, ~f, xr, c)
+      List.append(&2, B, a, b)
     case 1n+e:
       Two{xl, xr} = two
       +hl = (h >> 1n : U32)
       +hr = (r >> 1n : U32)
-      a b = par(e, split(U32.to_nat(hl), xl), hl, (h - hl : U32)) par(e, split(U32.to_nat(hr), xr), hr, (r - hr : U32))
-      List.append(&2, F32, a, b)
+      a b = par(~A, ~B, ~C, ~f, e, split(A, U32.to_nat(hl), xl), hl, (h - hl : U32), c) par(~A, ~B, ~C, ~f, e, split(A, U32.to_nat(hr), xr), hr, (r - hr : U32), c)
+      List.append(&2, B, a, b)
 
+# t is the length of xs, used only to balance the split.
 # ponytail: fixed 64 tasks once t >= 64, 2 below; tune per machine if it matters
-def ics(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>, +t: U32, +n: U32, +rank: Bool) -> List<&2, F32>:
+def pmap(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, xs: List<&2, A>, +t: U32, +c: C) -> List<&2, B>:
   +h = (t >> 1n : U32)
-  par(Bool.pick(Nat, U32.is_lt(t, 64), 0n, 5n), split(U32.to_nat(h), zip(xs, ys, n, rank)), h, (t - h : U32))
+  par(~A, ~B, ~C, ~f, Bool.pick(Nat, U32.is_lt(t, 64), 0n, 5n), split(A, U32.to_nat(h), xs), h, (t - h : U32), c)
 
-def ic.chk(ok: Bool, rx: List<&2, List<&2, F32>>, ry: List<&2, List<&2, F32>>, +t: U32, +n: U32, +rank: Bool) -> Maybe<&2, List<&2, F32>>:
+# ---- one IC per date
+
+type XY is Data:
+  XY{x: List<&2, F32>, y: List<&2, F32>}
+
+def date_xy(rank: Bool, p: XY) -> F32:
+  XY{x, y} = p
+  date_ic(x, y, rank)
+
+# row i of xs with row i of ys, up to the shorter list
+def zip(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>) -> List<&2, XY>:
+  match xs ys:
+    case Con{x, xt} Con{y, yt}:
+      XY{x, y} <> zip(xt, yt)
+    case Con{_, _} Nil{}:
+      Nil{}
+    case Nil{} _:
+      Nil{}
+
+def ics(xs: List<&2, List<&2, F32>>, ys: List<&2, List<&2, F32>>, +t: U32, +rank: Bool) -> List<&2, F32>:
+  pmap(~XY, ~F32, ~Bool, ~date_xy, zip(xs, ys), t, rank)
+
+def ic.chk(ok: Bool, rx: List<&2, List<&2, F32>>, ry: List<&2, List<&2, F32>>, +t: U32, +rank: Bool) -> Maybe<&2, List<&2, F32>>:
   match ok:
     case True{}:
-      Some{ics(rx, ry, t, n, rank)}
+      Some{ics(rx, ry, t, rank)}
     case False{}:
       None{}
 
 def ic.go(x: Panel, y: Panel, +rank: Bool) -> Maybe<&2, List<&2, F32>>:
   match x y:
-    case Panel{+tx, +nx, rx} Panel{ty, ny, ry}:
-      ic.chk(Bool.and(U32.is_eq(tx, ty), U32.is_eq(nx, ny)), rx, ry, tx, nx, rank)
+    case Panel{+tx, nx, rx} Panel{ty, ny, ry}:
+      ic.chk(Bool.and(U32.is_eq(tx, ty), U32.is_eq(nx, ny)), rx, ry, tx, rank)
 
 # One Spearman IC per date (average ranks for ties); None when the shapes differ.
 def rank_ic(x: Panel, y: Panel) -> Maybe<&2, List<&2, F32>>:
@@ -463,7 +494,7 @@ def summary(+xs: List<&2, F32>) -> Maybe<&2, Summary>:
   summary.k(tally(xs, Tally{0.0, 0, 0}), xs)
 
 # ---------------------------------------------------------------- transforms
-# Each transform is a scan over the dates or a map over the rows. LAWS.bend
+# Each transform is a scan over the dates or a map over the rows (pmap). LAWS.bend
 # proves both shapes causal: output rows 0..k-1 depend only on input rows
 # 0..k-1, so nothing built from them can look ahead.
 
@@ -475,14 +506,6 @@ def scan(~S: Data, ~next: S -> List<&2, F32> -> S, ~out: S -> List<&2, F32> -> L
     case Con{+x, t}:
       +s2 = next(s, x)
       out(s2, x) <> scan(~S, ~next, ~out, t, s2)
-
-# row i of the output is f(c, row i)
-def rowwise(~C: Data, ~f: C -> List<&2, F32> -> List<&2, F32>, xs: List<&2, List<&2, F32>>, +c: C) -> List<&2, List<&2, F32>>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{x, t}:
-      f(c, x) <> rowwise(~C, ~f, t, c)
 
 # ---- one row; NaN stays NaN
 
@@ -647,22 +670,22 @@ def winsorize.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
 # Each date: (x - mean) / sd across names.
 def zscore(p: Panel) -> Panel:
   Panel{+t, +n, rows} = p
-  Panel{t, n, rowwise(~Cfg, ~zscore.f, rows, Cfg{n, 0.0})}
+  Panel{t, n, pmap(~List<&2, F32>, ~List<&2, F32>, ~Cfg, ~zscore.f, rows, t, Cfg{n, 0.0})}
 
 # Each date: x - mean across names.
 def demean(p: Panel) -> Panel:
   Panel{+t, +n, rows} = p
-  Panel{t, n, rowwise(~Cfg, ~demean.f, rows, Cfg{n, 0.0})}
+  Panel{t, n, pmap(~List<&2, F32>, ~List<&2, F32>, ~Cfg, ~demean.f, rows, t, Cfg{n, 0.0})}
 
 # Each date: percentile rank across names, in (0, 1].
 def rank(p: Panel) -> Panel:
   Panel{+t, +n, rows} = p
-  Panel{t, n, rowwise(~Cfg, ~rank.f, rows, Cfg{n, 0.0})}
+  Panel{t, n, pmap(~List<&2, F32>, ~List<&2, F32>, ~Cfg, ~rank.f, rows, t, Cfg{n, 0.0})}
 
 # Each date: clip to that date's q and 1 - q quantiles.
 def winsorize(p: Panel, +q: F32) -> Panel:
   Panel{+t, +n, rows} = p
-  Panel{t, n, rowwise(~Cfg, ~winsorize.f, rows, Cfg{n, q})}
+  Panel{t, n, pmap(~List<&2, F32>, ~List<&2, F32>, ~Cfg, ~winsorize.f, rows, t, Cfg{n, q})}
 
 # ---- time-series panel transforms, per name across dates
 
@@ -746,3 +769,50 @@ def win.out(st: Win, x: List<&2, F32>) -> List<&2, F32>:
 def rolling_mean(p: Panel, +w: Nat) -> Panel:
   Panel{+t, +n, rows} = p
   Panel{t, n, scan(~Win, ~win.next, ~win.out, rows, Win{w, Nil{}})}
+
+# ---------------------------------------------------------------- Newey-West t
+
+def drop_nan(xs: List<&2, F32>) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      List.filter.put(F32, x, drop_nan(t), Bool.not(is_nan(x)))
+
+def dot(xs: List<&2, F32>, ys: List<&2, F32>, +acc: F32) -> F32:
+  match xs ys:
+    case Con{a, at} Con{b, bt}:
+      dot(at, bt, (acc + (a * b) : F32))
+    case Con{_, _} Nil{}:
+      acc
+    case Nil{} _:
+      acc
+
+# 2 * sum over lags l = j..L of (1 - l / (L + 1)) * gamma_l, gamma_l = sum d_t d_(t-l) / T
+def nw.sum(k: Nat, +j: Nat, +lags: Nat, +ds: List<&2, F32>, +tf: F32, +acc: F32) -> F32:
+  match k:
+    case 0n:
+      acc
+    case 1n+p:
+      +w = (1.0 - (F32.from_nat(j) / F32.from_nat(1n+lags)) : F32)
+      +g = (dot(List.drop(&2, F32, ds, j), ds, 0.0) / tf : F32)
+      nw.sum(p, 1n+j, lags, ds, tf, (acc + ((2.0 * w) * g) : F32))
+
+def nw.of(few: Bool, +vs: List<&2, F32>, +lags: Nat) -> Maybe<&2, F32>:
+  match few:
+    case True{}:
+      None{}
+    case False{}:
+      +tf = F32.from_nat(List.length(&2, F32, vs))
+      +m = row.mean(vs)
+      +ds = row.affine(vs, m, 1.0)
+      +s = ((dot(ds, ds, 0.0) / tf) + nw.sum(lags, 1n, lags, ds, tf, 0.0) : F32)
+      Some{(m / F32.sqrt((s / tf : F32)) : F32)}
+
+# t of the mean IC with a Newey-West (Bartlett) variance over `lags` lags, on the
+# non-NaN ICs. Use it when forward returns overlap: with horizon h, lags >= h.
+# lags = 0 is the plain t of summary, except the variance divides by T, not T - 1.
+# None with fewer than 2 non-NaN ICs.
+def nw_t(+ics: List<&2, F32>, +lags: Nat) -> Maybe<&2, F32>:
+  +vs = drop_nan(ics)
+  nw.of(Nat.is_lt(List.length(&2, F32, vs), 2n), vs, lags)

@@ -17,7 +17,7 @@ A panel is a list of rows, oldest date first. Each row is one date's cross-secti
 
 **NaN marks a missing value.** pandas and numpy do the same, and NaN survives a numpy `.tofile` round trip into `F32Array` (checked in a spike). Bend detects it with `F32.is_ne(x, x)`. A separate mask would double the memory and need its own alignment checks. A name that enters or leaves the universe is NaN on the dates it isn't trading. Every function drops the names that are NaN in either input for that date, so it computes on complete pairs.
 
-**Rows are lists, not `F32Array`.** The first version used bend-kit's `F32Array`. It is a `Type`, so every value can be used once, and Bend enforces that inside proofs too. A proof that a list of rows survives a split and an append has to mention the list in two lemmas, and the checker rejects it. A lemma can't take the list as erased either, since a proof can only match on live values. As `List<&2, F32>` the rows are `Data`, the proofs can name them freely, and a loaded panel can be reused. The cost was measured on two 5000 × 1000 panels: 280 MB resident, about 28 bytes per value against 4, and the same speed, 0.32 s on 8 cores. `F32Array` stays at the edge, for reading files.
+**Rows are lists, not `F32Array`.** The first version used bend-kit's `F32Array`. It is a `Type`, so every value can be used once, and Bend enforces that inside proofs too. A proof that a list of rows survives a split and an append has to mention the list in two lemmas, and the checker rejects it. A lemma can't take the list as erased either, since a proof can only match on live values. As `List<&2, F32>` the rows are `Data`, the proofs can name them freely, and a loaded panel can be reused. The cost was measured on two 5000 × 1000 panels: 280 MB resident, about 28 bytes per value against 4, and the same speed, 0.32 s on 8 cores at the time (0.36 s now that the pair filter builds an explicit list). `F32Array` stays at the edge, for reading files.
 
 Sorts copy the complete pairs of a date into a scratch `Array<F32>`, key and payload interleaved as in `bench/array_f32.bend`, and heapsort that. The copy is O(n) against the sort's O(n log n).
 
@@ -40,7 +40,7 @@ panel.to_numpy(dtype="<f4").tofile("signal.f32")   # T x N, row-major, NaN = mis
 
 ## First API
 
-All built except `nw_t`, plus `forward_ic`, `lead`, `ewma` and `rolling_mean`; [README.md](README.md) has the exact types.
+All built, plus `forward_ic`, `lead`, `ewma` and `rolling_mean`; [README.md](README.md) has the exact types.
 
 | def | result |
 |---|---|
@@ -49,7 +49,7 @@ All built except `nw_t`, plus `forward_ic`, `lead`, `ewma` and `rolling_mean`; [
 | `rank_ic(x, y)` | `Maybe<List<F32>>`, one Spearman IC per date, NaN where fewer than 3 complete pairs |
 | `ic(x, y)` | the same with Pearson |
 | `summary(ics)` | mean, sd, IR, t, hit rate, and the count of non-NaN dates |
-| `nw_t(ics, lags)` | not built yet: Newey-West t of the mean IC |
+| `nw_t(ics, lags)` | Newey-West t of the mean IC |
 | `zscore(p)`, `demean(p)`, `rank(p)`, `winsorize(p, q)` | row-wise transforms, NaN passed through |
 
 Hidden helpers cover the array plumbing: fold, map, and sort over a scratch `Array<F32>`. In Bend every `Array.get` hands back a pair, a computed pair can't be destructured, and defs can't call each other in a cycle. A heap sift step took five helper defs in the benchmark. The public functions should never touch `get` and `set` directly.
@@ -58,9 +58,8 @@ Hidden helpers cover the array plumbing: fold, map, and sort over a scratch `Arr
 
 The checker doesn't run `F32` arithmetic, so no law can state an IC value. Laws over floats can only be fixtures, as in `f32array`. What a law can state for every input is the structure: which rows reach which IC, in what order, and how far `lead` shifts. README.md lists the laws that hold now.
 
-Still to prove:
+Proved since: the complete-pair filter (`date_ic_missing_x`, `date_ic_missing_y`). The proof states it generically: changing one side's value where the other side is NaN leaves the IC unchanged. Still to prove:
 
-- a name enters a date's IC exactly when it is non-missing in both rows. The NaN test is `F32.is_ne(x, x)`, which is opaque, so the law has to be generic over the predicate.
 - ranks match the counting definition, 2·rankᵢ = 2·#{xⱼ < xᵢ} + #{xⱼ = xᵢ} − 1, for any total order. bend-mathlib proves a merge sort sorted and a permutation, which is the place to start.
 
 ## Open questions
