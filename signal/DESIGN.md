@@ -42,6 +42,8 @@ panel.to_numpy(dtype="<f4").tofile("signal.f32")   # T x N, row-major, NaN = mis
 
 ## First API
 
+The first five are built; [README.md](README.md) has their exact types.
+
 | def | result |
 |---|---|
 | `Panel.from_rows(rows)` | `Maybe<Panel>`, `None` when rows differ in length |
@@ -49,8 +51,8 @@ panel.to_numpy(dtype="<f4").tofile("signal.f32")   # T x N, row-major, NaN = mis
 | `rank_ic(x, y)` | `Maybe<List<F32>>`, one Spearman IC per date, NaN where fewer than 3 complete pairs |
 | `ic(x, y)` | the same with Pearson |
 | `summary(ics)` | mean, sd, IR, t, hit rate, and the count of non-NaN dates |
-| `nw_t(ics, lags)` | Newey-West t of the mean IC |
-| `zscore(p)`, `demean(p)`, `rank(p)`, `winsorize(p, q)` | row-wise transforms, NaN passed through |
+| `nw_t(ics, lags)` | not built: Newey-West t of the mean IC |
+| `zscore(p)`, `demean(p)`, `rank(p)`, `winsorize(p, q)` | not built: row-wise transforms, NaN passed through |
 
 Hidden helpers cover the array plumbing: fold, map, and sort over a scratch `Array<F32>`. In Bend every `Array.get` hands back a pair, a computed pair can't be destructured, and defs can't call each other in a cycle. A heap sift step took five helper defs in the benchmark. The public functions should never touch `get` and `set` directly.
 
