@@ -278,3 +278,54 @@ law date_ic_missing_x:
   for h1: {List.get(&2, F32, xs, i) == Some{x} : Maybe<&2, F32>}
   for h2: {S.is_nan(x) == True{} : Bool}
   {S.date_ic(xs, List.set(&2, F32, ys, i, v), rank) == S.date_ic(xs, ys, rank) : F32}
+
+# ---------------------------------------------------------------- ranks
+# The ranks behind rank_ic and rank are proved against counting, for any total
+# order. F32's <= is one on the values that reach a rank, since the NaN filter
+# runs first, but floats are opaque to the checker, so that step is assumed.
+
+def ind(b: Bool) -> Nat:
+  Bool.pick(Nat, b, 1n, 0n)
+
+# #{x in xs : x < q}
+def cnt_lt(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +q: A) -> Nat:
+  match xs:
+    case Nil{}:
+      0n
+    case Con{x, t}:
+      Nat.add(ind(Bool.not(le(q, x))), cnt_lt(~A, ~le, t, q))
+
+# #{x in xs : x <= q}
+def cnt_le(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +q: A) -> Nat:
+  match xs:
+    case Nil{}:
+      0n
+    case Con{x, t}:
+      Nat.add(ind(le(x, q)), cnt_le(~A, ~le, t, q))
+
+
+# 2 x the average 1-based rank of q among xs: ties share the mean of their places.
+law rank_count:
+  for ~A: Data
+  for ~le: A -> A -> Bool
+  for ~le_total: @x: A -> @y: A -> {le(x, y) == False{} : Bool} -> {le(y, x) == True{} : Bool}
+  for ~le_trans: @x: A -> @y: A -> @z: A -> {le(x, y) == True{} : Bool} -> {le(y, z) == True{} : Bool} -> {le(x, z) == True{} : Bool}
+  for +xs: List<&2, A>
+  for +q: A
+  {S.rank_of(~A, ~le, S.tree(~A, ~le, xs), q) == 1n+Nat.add(cnt_lt(~A, ~le, xs, q), cnt_le(~A, ~le, xs, q)) : Nat}
+
+def spec_ranks(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +all: List<&2, A>) -> List<&2, Nat>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+q, t}:
+      (1n+Nat.add(cnt_lt(~A, ~le, all, q), cnt_le(~A, ~le, all, q))) <> spec_ranks(~A, ~le, t, all)
+
+# ranks(xs) is that number for each element, in place.
+law ranks_spec:
+  for ~A: Data
+  for ~le: A -> A -> Bool
+  for ~le_total: @x: A -> @y: A -> {le(x, y) == False{} : Bool} -> {le(y, x) == True{} : Bool}
+  for ~le_trans: @x: A -> @y: A -> @z: A -> {le(x, y) == True{} : Bool} -> {le(y, z) == True{} : Bool} -> {le(x, z) == True{} : Bool}
+  for +xs: List<&2, A>
+  {S.ranks(~A, ~le, xs) == spec_ranks(~A, ~le, xs, xs) : List<&2, Nat>}

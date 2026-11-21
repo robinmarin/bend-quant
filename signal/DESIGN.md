@@ -58,9 +58,9 @@ Hidden helpers cover the array plumbing: fold, map, and sort over a scratch `Arr
 
 The checker doesn't run `F32` arithmetic, so no law can state an IC value. Laws over floats can only be fixtures, as in `f32array`. What a law can state for every input is the structure: which rows reach which IC, in what order, and how far `lead` shifts. README.md lists the laws that hold now.
 
-Proved since: the complete-pair filter (`date_ic_missing_x`, `date_ic_missing_y`). The proof states it generically: changing one side's value where the other side is NaN leaves the IC unchanged. Still to prove:
+Proved since: the complete-pair filter (`date_ic_missing_x`, `date_ic_missing_y`) and the ranks (`rank_count`, `ranks_spec`).
 
-- ranks match the counting definition, 2·rankᵢ = 2·#{xⱼ < xᵢ} + #{xⱼ = xᵢ} − 1, for any total order. bend-mathlib proves a merge sort sorted and a permutation, which is the place to start.
+The ranks took a change of algorithm. The heapsort over an `Array<F32>` was fast, but a proof about Array contents would need the tree under Base's `Array`. Ranks now come from a search tree that merges tied values into one node, built by insertion. The proof needs no sortedness: any insertion order gives the right counts, and the order only keeps the tree balanced. It costs about 3 times the heapsort on rank-heavy pipelines. Two Bend facts shaped the code: `Bool.pick` evaluates both branches (a recursive pick takes exponential time), and passing a subtree into a lambda hides it from the termination check. So each branch decision is computed by the caller and passed in as a parameter.
 
 ## Open questions
 

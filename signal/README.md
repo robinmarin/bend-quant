@@ -20,12 +20,15 @@ A row is a `List<&2, F32>`. `io.bend` imports `bend-kit-f32array@0.2.1.0` to rea
 - `lead_row` and `lead_panel`: row i of `lead(p, h)` is row i + h of `p`, whenever that row exists.
 - `scan_causal` and `pseq_causal`: for every transform built on `scan` or on a row map, the first k output rows depend only on the first k input rows. `ewma_causal` and `rolling_mean_causal` are the `scan` instances.
 - `zscore_row`, `demean_row`, `rank_row`, `winsorize_row`: row i of the output is computed from row i of the input alone.
+- `rank_count` and `ranks_spec`: the ranks behind `rank_ic` and `rank` are average ranks. For every list and every total order, 2 x the rank of q is 1 + #{x < q} + #{x <= q}, so tied values share the mean of their places. Both laws are generic over the comparison, and `--verdict` checks them through an instance at `Nat`.
 
 A signal built only from these transforms and evaluated with `forward_rank_ic` can't see the future anywhere in this library. A full-sample z-score or a centered window can't be written as a `scan`, so it can't claim these laws.
 
 One trust boundary remains: the meaning of the input files. If row j of `ret` holds the return over (j, j + 1] instead of (j - 1, j], every law still holds and the IC is a lookahead. The contract above is what the caller has to get right.
 
 The checker doesn't run F32 arithmetic, so no law states a value: the IC of one date, a z-score, an EWMA, a t-stat. `check.py` tests those against scipy, pandas and statsmodels instead.
+
+The rank laws assume one thing the checker can't see: that F32's `<=` is a total order on the values being ranked. IEEE 754 makes it one on every value except NaN, and every rank runs after the NaN filter. Bend declares float comparison without a definition, so that step stays an assumption.
 
 ## Example
 
@@ -85,6 +88,7 @@ A `Panel` is `Data`, so one loaded panel can go to any of these as often as you 
 ## Limits
 
 - The IC step and the row-wise transforms run in parallel over dates, 64 tasks once T reaches 64 and 2 below that. `ewma` and `rolling_mean` run on one core, since each date depends on the last. One date's sort runs on one core.
+- Ranks come from a search tree, built by inserting the values in an interleaved order. That is about 3 times slower than the unproved heapsort it replaced, see the table below. Sorted and random rows build a balanced tree; a row ordered adversarially to the interleave could build a deep one.
 - A row is a linked list, about 28 bytes per value. Two 5000 × 1000 panels take 280 MB resident.
 - Sums within a date are plain running sums in F32. ICs match scipy's float64 to about 2e-7 at N=400. Thousands of names should be fine, but past that the sums should switch to pairwise addition.
 - `Panel.load` reads the file in one call, so T × N must stay under 2^30 floats (4 GiB).
@@ -94,10 +98,12 @@ A `Panel` is `Data`, so one loaded panel can go to any of these as often as you 
 
 ```sh
 python3 signal/check.py    # needs bend, numpy, scipy
-cd signal && bend PROOF.bend --verdict    # needs Lean 4.34.0 on PATH
+cd signal && bend PROOF.bend --verdict    # needs Lean 4.34.0 on PATH; about 1 s once the kernel is built
 ```
 
 `check.py` builds `check.bend` and compares every per-date IC and the summary with scipy. It covers continuous data, heavy ties, 15% NaN on each side, all-missing, 2-name, 3-name and constant dates, a single date, a 300 × 400 panel that takes the parallel path, forward ICs at horizons 1, 5 and past the end, and a shape mismatch. It compares `nw_t` at lags 0, 1 and 5 with statsmodels, and all six transforms with pandas on a panel with ties, 20% NaN, a dead name, a dead date and a date with 2 names. The tolerance is 2e-5. Breaking tie averaging on purpose fails two cases with errors near 0.06.
+
+`ranks_proof.bend` holds the rank lemmas, about 600 lines: counts over lists and over the interleave, counts over a tree, the search-tree invariant, and the walk.
 
 `--verdict` checks the proofs twice, the second time with BendTT's kernel, which has its own proof in Lean. Broken laws and broken code were tried and rejected:
 - `lead_row` claiming row k + i + 1.
@@ -106,14 +112,19 @@ cd signal && bend PROOF.bend --verdict    # needs Lean 4.34.0 on PATH
 - `zscore_row` claiming row i comes from row i + 1.
 - `date_ic_missing_y` claimed for a return that is present.
 - `pmap_seq` claiming the parallel map drops an element.
+- `rank_count` claiming 1 + 2 x #{x < q}, which ignores ties.
+- tree insertion dropping a tied value instead of counting it.
+- the `<=` walk comparing the wrong way round.
 - `both`, the filter's test, changed to check only the return, which lets a NaN signal into the IC.
 
 On 5000 × 1000 panels, 8 cores, including loading two panels:
 
 | pipeline | Bend | pandas, without loading |
 |---|---:|---:|
-| `rank_ic` and `ic` (check.bend) | 0.36 s | 0.66 s for the rank IC alone |
-| winsorize, zscore, `forward_ic` | 0.27 s | 1.12 s |
-| ewma, rank, `forward_rank_ic` | 0.55 s | 0.98 s |
+| `rank_ic` and `ic` (check.bend) | 1.33 s | 0.66 s for the rank IC alone |
+| winsorize, zscore, `forward_ic` | 0.30 s | 1.12 s |
+| ewma, rank, `forward_rank_ic` | 1.73 s | 0.98 s |
+
+Before the rank proof, ranking used an in-place heapsort: 0.36 s and 0.55 s for the first and last rows.
 
 Each gives the same mean IC as pandas.

@@ -16,6 +16,13 @@ def nan() -> F32:
 def is_nan(+x: F32) -> Bool:
   F32.is_ne(x, x)
 
+def drop_nan(xs: List<&2, F32>) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      List.filter.put(F32, x, drop_nan(t), Bool.not(is_nan(x)))
+
 # ---------------------------------------------------------------- building a panel
 
 def Panel.rows.ok(xs: List<&2, List<&2, F32>>, +n: Nat) -> Bool:
@@ -164,52 +171,139 @@ def hsort(a: Array<F32>, +m: U32) -> Array<F32>:
   +h = (m >> 1n : U32)
   sortdown(U32.to_nat((m - 1 : U32)), heapify(U32.to_nat(h), a, (h - 1 : U32), m), (m - 1 : U32))
 
-# ---- sorted (key, payload) -> (payload, average rank of key)
+type Two<-A: Data> is Data:
+  Two{l: List<&2, A>, r: List<&2, A>}
 
-type Ties is Type:
-  Ties{a: Array<F32>, start: U32, key: F32}
+# ---- ranks by counting, generic over a comparison le
+# For a total order le, 2 x the average 1-based rank of q among xs is
+# 1 + #{x < q} + #{x <= q} (law rank_count). A search tree that merges tied
+# values into one node answers both counts in one walk.
 
-# payload slots s..e-1 get the mean position of the run, (s + e - 1) / 2
-def fill_rank(k: Nat, a: Array<F32>, +j: U32, +v: F32) -> Array<F32>:
+type Tr<-A: Data> is Data:
+  Leaf{}
+  Node{l: Tr<A>, v: A, c: Nat, s: Nat, r: Tr<A>}
+
+def tsize(-A: Data, t: Tr<A>) -> Nat:
+  match t:
+    case Leaf{}:
+      0n
+    case Node{_, _, _, s, _}:
+      s
+
+# where a goes relative to v: EQ when tied, LT left, GT right
+def ord(~A: Data, ~le: A -> A -> Bool, +a: A, +v: A) -> Cmp:
+  Bool.pick(Cmp, le(a, v), Bool.pick(Cmp, le(v, a), EQ{}, LT{}), GT{})
+
+def root_ord(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +a: A) -> Cmp:
+  match t:
+    case Leaf{}:
+      EQ{}
+    case Node{_, v, _, _, _}:
+      ord(~A, ~le, a, v)
+
+# d is root_ord(t, a), computed by the caller: a match can't branch on a
+# computed value, and a helper can't call back into ins.
+def ins(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +a: A, d: Cmp) -> Tr<A>:
+  match t d:
+    case Leaf{} _:
+      Node{Leaf{}, a, 1n, 1n, Leaf{}}
+    case Node{l, v, c, s, r} EQ{}:
+      Node{l, v, 1n+c, 1n+s, r}
+    case Node{+l, v, c, s, r} LT{}:
+      Node{ins(~A, ~le, l, a, root_ord(~A, ~le, l, a)), v, c, 1n+s, r}
+    case Node{l, v, c, s, +r} GT{}:
+      Node{l, v, c, 1n+s, ins(~A, ~le, r, a, root_ord(~A, ~le, r, a))}
+
+def insert(~A: Data, ~le: A -> A -> Bool, +t: Tr<A>, +a: A) -> Tr<A>:
+  ins(~A, ~le, t, a, root_ord(~A, ~le, t, a))
+
+def build(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, t: Tr<A>) -> Tr<A>:
+  match xs:
+    case Nil{}:
+      t
+    case Con{x, rest}:
+      build(~A, ~le, rest, insert(~A, ~le, t, x))
+
+def root_lt(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +q: A) -> Bool:
+  match t:
+    case Leaf{}:
+      False{}
+    case Node{_, v, _, _, _}:
+      Bool.not(le(q, v))
+
+def root_le(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +q: A) -> Bool:
+  match t:
+    case Leaf{}:
+      False{}
+    case Node{_, v, _, _, _}:
+      le(v, q)
+
+# #{x in t : x < q}, with x < q meaning not le(q, x); d is root_lt(t, q)
+def dlt(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +q: A, d: Bool) -> Nat:
+  match t d:
+    case Leaf{} _:
+      0n
+    case Node{l, _, c, _, +r} True{}:
+      Nat.add(tsize(A, l), Nat.add(c, dlt(~A, ~le, r, q, root_lt(~A, ~le, r, q))))
+    case Node{+l, _, _, _, _} False{}:
+      dlt(~A, ~le, l, q, root_lt(~A, ~le, l, q))
+
+# #{x in t : x <= q}; d is root_le(t, q)
+def dle(~A: Data, ~le: A -> A -> Bool, t: Tr<A>, +q: A, d: Bool) -> Nat:
+  match t d:
+    case Leaf{} _:
+      0n
+    case Node{l, _, c, _, +r} True{}:
+      Nat.add(tsize(A, l), Nat.add(c, dle(~A, ~le, r, q, root_le(~A, ~le, r, q))))
+    case Node{+l, _, _, _, _} False{}:
+      dle(~A, ~le, l, q, root_le(~A, ~le, l, q))
+
+# ---- insertion order: interleave halves, so sorted input still builds a
+# balanced tree. Any order gives the same counts (law shuffle_count).
+
+def deal.cons(-A: Data, +x: A, two: Two<A>) -> Two<A>:
+  Two{l, r} = two
+  Two{x <> r, l}
+
+# elements 0, 2, 4, .. and 1, 3, 5, ..
+def deal(-A: Data, xs: List<&2, A>) -> Two<A>:
+  match xs:
+    case Nil{}:
+      Two{Nil{}, Nil{}}
+    case Con{x, t}:
+      deal.cons(A, x, deal(A, t))
+
+# k levels of dealing, then the halves in order
+# ponytail: a fixed interleave, balanced for sorted rows and random ones; a
+# row ordered adversarially to it could still build a deep tree
+def shf(-A: Data, +k: Nat, two: Two<A>) -> List<&2, A>:
   match k:
     case 0n:
-      a
+      Two{l, r} = two
+      List.append(&2, A, l, r)
     case 1n+p:
-      fill_rank(p, Array.set(F32, a, ((2 * j) + 1 : U32), v), (j + 1 : U32), v)
+      Two{l, r} = two
+      List.append(&2, A, shf(A, p, deal(A, l)), shf(A, p, deal(A, r)))
 
-def close_run(a: Array<F32>, +s: U32, +e: U32) -> Array<F32>:
-  fill_rank(U32.to_nat((e - s : U32)), a, s, ((((U32.to_f32(s) + U32.to_f32(e)) - 1.0) / 2.0) : F32))
+def shuffle(-A: Data, k: Nat, xs: List<&2, A>) -> List<&2, A>:
+  shf(A, k, deal(A, xs))
 
-def ties.move(p: Array<F32> & F32, +k: U32, +start: U32, +key: F32) -> Ties:
-  (a, pk) = p
-  Ties{Array.set(F32, a, (2 * k : U32), pk), start, key}
+def tree(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>) -> Tr<A>:
+  build(~A, ~le, shuffle(A, U32.log2(U32.from_nat(List.length(&2, A, xs))), xs), Leaf{})
 
-def ties.run(new: Bool, a: Array<F32>, +k: U32, +start: U32, +key: F32, +kk: F32) -> Ties:
-  match new:
-    case True{}:
-      ties.move(Array.get(F32, close_run(a, start, k), ((2 * k) + 1 : U32)), k, k, kk)
-    case False{}:
-      ties.move(Array.get(F32, a, ((2 * k) + 1 : U32)), k, start, key)
+# 2 x the average 1-based rank of q among the values in t
+def rank_of(~A: Data, ~le: A -> A -> Bool, +t: Tr<A>, +q: A) -> Nat:
+  1n+Nat.add(dlt(~A, ~le, t, q, root_lt(~A, ~le, t, q)), dle(~A, ~le, t, q, root_le(~A, ~le, t, q)))
 
-def ties.key(p: Array<F32> & F32, +k: U32, +start: U32, +key: F32) -> Ties:
-  (a, +kk) = p
-  ties.run(F32.is_ne(kk, key), a, k, start, key, kk)
+def ranks.go(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +t: Tr<A>) -> List<&2, Nat>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, rest}:
+      rank_of(~A, ~le, t, x) <> ranks.go(~A, ~le, rest, t)
 
-def ties.add(st: Ties, +k: U32) -> Ties:
-  Ties{a, start, key} = st
-  ties.key(Array.get(F32, a, (2 * k : U32)), k, start, key)
-
-def ties.go(k: Nat, st: Ties, +i: U32, +m: U32) -> Array<F32>:
-  match k:
-    case 0n:
-      Ties{a, start, _} = st
-      close_run(a, start, m)
-    case 1n+p:
-      ties.go(p, ties.add(st, i), (i + 1 : U32), m)
-
-# the NaN start key differs from every key, so position 0 opens the first run
-def rank_pass(a: Array<F32>, +m: U32) -> Array<F32>:
-  ties.go(U32.to_nat(m), Ties{hsort(a, m), 0, nan()}, 0, m)
+def ranks(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>) -> List<&2, Nat>:
+  ranks.go(~A, ~le, xs, tree(~A, ~le, xs))
 
 # ---- two-pass Pearson over m pairs
 
@@ -262,20 +356,16 @@ def pearson(a: Array<F32>, +m: U32) -> F32:
 
 # ---- the IC of one date
 
-def date.m(small: Bool, buf: Array<F32>, +m: U32, rank: Bool) -> F32:
+def date.m(small: Bool, buf: Array<F32>, +m: U32) -> F32:
   match small:
     case True{}:
       nan()
     case False{}:
-      match rank:
-        case True{}:
-          pearson(rank_pass(rank_pass(buf, m), m), m)
-        case False{}:
-          pearson(buf, m)
+      pearson(buf, m)
 
-def date.fin(st: Fill, +rank: Bool) -> F32:
+def date.fin(st: Fill) -> F32:
   Fill{buf, +m} = st
-  date.m(U32.is_lt(m, 3), buf, m, rank)
+  date.m(U32.is_lt(m, 3), buf, m)
 
 # ---- the complete pairs of a date: the only thing an IC reads (laws date_ic_*)
 
@@ -309,9 +399,46 @@ def fill.pairs(ps: List<&2, Pr>, st: Fill) -> Fill:
       Fill{buf, +m} = st
       fill.pairs(t, Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), x), ((2 * m) + 1 : U32), y), (m + 1 : U32)})
 
+def fsts(ps: List<&2, Pr>) -> List<&2, F32>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case Con{p, t}:
+      Pr{x, _} = p
+      x <> fsts(t)
+
+def snds(ps: List<&2, Pr>) -> List<&2, F32>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case Con{p, t}:
+      Pr{_, y} = p
+      y <> snds(t)
+
+def nat_f32(n: Nat) -> F32:
+  U32.to_f32(U32.from_nat(n))
+
+def zip_ranks(xs: List<&2, Nat>, ys: List<&2, Nat>) -> List<&2, Pr>:
+  match xs ys:
+    case Con{x, xt} Con{y, yt}:
+      Pr{nat_f32(x), nat_f32(y)} <> zip_ranks(xt, yt)
+    case Con{_, _} Nil{}:
+      Nil{}
+    case Nil{} _:
+      Nil{}
+
+# the pairs a Pearson IC runs on: the values, or for a rank IC their ranks
+# (2 x the average rank; Pearson doesn't see the scale)
+def prep(+ps: List<&2, Pr>, rank: Bool) -> List<&2, Pr>:
+  match rank:
+    case True{}:
+      zip_ranks(ranks(~F32, ~F32.is_le, fsts(ps)), ranks(~F32, ~F32.is_le, snds(ps)))
+    case False{}:
+      ps
+
 # the IC of a list of complete pairs; NaN for fewer than 3
 def core(+ps: List<&2, Pr>, +rank: Bool) -> F32:
-  date.fin(fill.pairs(ps, Fill{Array.new(F32, depth(U32.from_nat(List.length(&2, Pr, ps))), 0.0), 0}), rank)
+  date.fin(fill.pairs(prep(ps, rank), Fill{Array.new(F32, depth(U32.from_nat(List.length(&2, Pr, ps))), 0.0), 0}))
 
 # NaN when fewer than 3 names are present in both rows
 def date_ic(x: List<&2, F32>, y: List<&2, F32>, +rank: Bool) -> F32:
@@ -330,9 +457,6 @@ def pseq(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, xs: List<&2, A>, +c: C) 
       Nil{}
     case Con{x, t}:
       f(c, x) <> pseq(~A, ~B, ~C, ~f, t, c)
-
-type Two<-A: Data> is Data:
-  Two{l: List<&2, A>, r: List<&2, A>}
 
 def split.cons(-A: Data, h: A, two: Two<A>) -> Two<A>:
   Two{l, r} = two
@@ -537,10 +661,22 @@ def row.demean(+xs: List<&2, F32>) -> List<&2, F32>:
 
 # -- percentile rank: average rank / count, in (0, 1], as pandas rank(pct=True)
 
+def pct.go(xs: List<&2, F32>, +t: Tr<F32>, +m2: F32) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, rest}:
+      Bool.pick(Unit -> F32, is_nan(x), u => x, u => (nat_f32(rank_of(~F32, ~F32.is_le, t, x)) / m2 : F32))(Unit{}) <> pct.go(rest, t, m2)
+
+def row.rank(+xs: List<&2, F32>, +n: U32) -> List<&2, F32>:
+  +vs = drop_nan(xs)
+  pct.go(xs, tree(~F32, ~F32.is_le, vs), (2.0 * nat_f32(List.length(&2, F32, vs)) : F32))
+
 def fill.idx.add(st: Fill, +v: F32, +i: U32) -> Fill:
   Fill{buf, m} = st
   fill.ok(is_nan(v), buf, m, v, U32.to_f32(i))
 
+# the present values of a row, as keys with their index as payload
 def fill.idx(k: Nat, xs: List<&2, F32>, +i: U32, st: Fill) -> Fill:
   match k xs:
     case 0n _:
@@ -549,58 +685,6 @@ def fill.idx(k: Nat, xs: List<&2, F32>, +i: U32, st: Fill) -> Fill:
       st
     case 1n+p Con{v, t}:
       fill.idx(p, t, (i + 1 : U32), fill.idx.add(st, v, i))
-
-type Sc is Type:
-  Sc{buf: Array<F32>, out: Array<F32>}
-
-def sc.b(p: Array<F32> & F32, out: Array<F32>, +idx: F32, +mf: F32) -> Sc:
-  (buf, r) = p
-  Sc{buf, Array.set(F32, out, F32.to_u32(idx), ((r + 1.0) / mf : F32))}
-
-def sc.a(p: Array<F32> & F32, out: Array<F32>, +k: U32, +mf: F32) -> Sc:
-  (buf, idx) = p
-  sc.b(Array.get(F32, buf, ((2 * k) + 1 : U32)), out, idx, mf)
-
-def sc.add(st: Sc, +k: U32, +mf: F32) -> Sc:
-  Sc{buf, out} = st
-  sc.a(Array.get(F32, buf, (2 * k : U32)), out, k, mf)
-
-# after rank_pass, pair k is (name index, average rank); write rank / m at the index
-def scatter(fuel: Nat, st: Sc, +k: U32, +mf: F32) -> Array<F32>:
-  match fuel:
-    case 0n:
-      Sc{_, out} = st
-      out
-    case 1n+p:
-      scatter(p, sc.add(st, k, mf), (k + 1 : U32), mf)
-
-type Rd is Type:
-  Rd{a: Array<F32>, acc: List<&2, F32>}
-
-def rd.put(p: Array<F32> & F32, acc: List<&2, F32>) -> Rd:
-  (a, v) = p
-  Rd{a, v <> acc}
-
-def rd.add(st: Rd, +i: U32) -> Rd:
-  Rd{a, acc} = st
-  rd.put(Array.get(F32, a, i), acc)
-
-# slots n-1 down to 0, prepended, so the list comes out in slot order
-def read_back(fuel: Nat, st: Rd, +i: U32) -> List<&2, F32>:
-  match fuel:
-    case 0n:
-      Rd{_, acc} = st
-      acc
-    case 1n+p:
-      read_back(p, rd.add(st, i), (i - 1 : U32))
-
-def row.rank.of(st: Fill, +n: U32) -> List<&2, F32>:
-  Fill{buf, +m} = st
-  out = scatter(U32.to_nat(m), Sc{rank_pass(buf, m), Array.new(F32, depth(n), nan())}, 0, U32.to_f32(m))
-  read_back(U32.to_nat(n), Rd{out, Nil{}}, (n - 1 : U32))
-
-def row.rank(+xs: List<&2, F32>, +n: U32) -> List<&2, F32>:
-  row.rank.of(fill.idx(U32.to_nat(n), xs, 0, Fill{Array.new(F32, depth(n), 0.0), 0}), n)
 
 # -- winsorize: clip at the q and 1 - q quantiles (linear, as pandas quantile)
 
@@ -771,13 +855,6 @@ def rolling_mean(p: Panel, +w: Nat) -> Panel:
   Panel{t, n, scan(~Win, ~win.next, ~win.out, rows, Win{w, Nil{}})}
 
 # ---------------------------------------------------------------- Newey-West t
-
-def drop_nan(xs: List<&2, F32>) -> List<&2, F32>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{+x, t}:
-      List.filter.put(F32, x, drop_nan(t), Bool.not(is_nan(x)))
 
 def dot(xs: List<&2, F32>, ys: List<&2, F32>, +acc: F32) -> F32:
   match xs ys:
