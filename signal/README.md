@@ -3,11 +3,13 @@
 Per-date information coefficients for a cross-sectional signal: Spearman rank IC, Pearson IC, and their mean, sd, IR, t-stat and hit rate. A panel is T dates by N names in float32, with NaN for a missing value. [DESIGN.md](DESIGN.md) explains the choices, and [bench/](bench/README.md) has the numbers behind them.
 
 ```bend
-import ./signal/signal.bend as S
-import ./signal/io.bend as I
+import bend-quant-signal@0.1.0.0/signal.bend as S
+import bend-quant-signal@0.1.0.0/io.bend as I
 ```
 
-A row is a `List<&2, F32>`. `io.bend` imports `bend-kit-f32array@0.2.1.0` to read files.
+From a clone, import `./signal/signal.bend` and `./signal/io.bend` instead. A row is a `List<&2, F32>`. `io.bend` imports `bend-kit-f32array@0.2.1.0` to read files.
+
+The defs in the API table below are the public ones. Every other def is internal: the laws and proofs name them, and they can change in any version.
 
 ## What is proved and what is tested
 
@@ -28,6 +30,8 @@ Both rank laws are generic over the comparison, and `--verdict` checks them thro
 A signal built only from these transforms and evaluated with `forward_rank_ic` can't see the future anywhere in this library. A full-sample z-score or a centered window can't be written as a `scan`, so it can't claim these laws.
 
 One trust boundary remains: the meaning of the input files. If row j of `ret` holds the return over (j, j + 1] instead of (j - 1, j], every law still holds and the IC is a lookahead. The contract above is what the caller has to get right.
+
+No unproved algorithm is left. Every sort is either the merge sort, which `sort_proof.bend` proves sorted and proves keeps every element (rank IC, `winsorize`), or the search tree behind `rank_count` (`rank`). The proved parts are generic, so they hold at F32 too.
 
 The checker doesn't run F32 arithmetic, so no law states a value: the IC of one date, a z-score, an EWMA, a t-stat. `check.py` tests those against scipy, pandas and statsmodels instead.
 
@@ -91,7 +95,7 @@ A `Panel` is `Data`, so one loaded panel can go to any of these as often as you 
 ## Limits
 
 - The IC step and the row-wise transforms run in parallel over dates, 64 tasks once T reaches 64 and 2 below that. `ewma` and `rolling_mean` run on one core, since each date depends on the last. One date's sort runs on one core.
-- A rank IC sorts the pairs twice with a merge sort over lists. `rank` looks each value up in a search tree, built by inserting the values in an interleaved order. Sorted and random rows build a balanced tree; a row ordered adversarially to the interleave could build a deep one. Both are slower than the unproved heapsort they replaced, see the table below.
+- A rank IC sorts the pairs twice with a merge sort over lists, and `winsorize` sorts each row with it once. `rank` looks each value up in a search tree, built by inserting the values in an interleaved order. Sorted and random rows build a balanced tree; a row ordered adversarially to the interleave could build a deep one. All three are slower than the unproved heapsort they replaced, see the table below.
 - A row is a linked list, about 28 bytes per value. Two 5000 × 1000 panels take 280 MB resident.
 - Sums within a date are plain running sums in F32. ICs match scipy's float64 to about 2e-7 at N=400. Thousands of names should be fine, but past that the sums should switch to pairwise addition.
 - `Panel.load` reads the file in one call, so T × N must stay under 2^30 floats (4 GiB).
@@ -128,10 +132,10 @@ On 5000 × 1000 panels, 8 cores, including loading two panels:
 
 | pipeline | Bend | pandas, without loading |
 |---|---:|---:|
-| `rank_ic` and `ic` (check.bend) | 0.85 s | 0.66 s for the rank IC alone |
-| winsorize, zscore, `forward_ic` | 0.30 s | 1.12 s |
-| ewma, rank, `forward_rank_ic` | 1.45 s | 0.98 s |
+| `rank_ic` and `ic` (check.bend) | 0.79 s | 0.66 s for the rank IC alone |
+| winsorize, zscore, `forward_ic` | 0.50 s | 1.12 s |
+| ewma, rank, `forward_rank_ic` | 1.35 s | 0.98 s |
 
-Before the rank proofs, ranking used an in-place heapsort: 0.36 s and 0.55 s for the first and last rows. Ranking by the tree alone took 1.33 s and 1.73 s. List code does about 10 times the work of the array heapsort on one thread as on eight, so lists, not parallelism, set the remaining gap.
+Before the proofs, every sort was an in-place heapsort over an `Array<F32>`: 0.36 s, 0.30 s and 0.55 s for the three rows. Ranking by the tree alone took 1.33 s and 1.73 s. List code does about 10 times the work of the array heapsort on one thread as on eight, so lists, not parallelism, set the remaining gap.
 
 Each gives the same mean IC as pandas.

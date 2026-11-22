@@ -16,21 +16,6 @@ def Laws.from_rows_ragged_last():
 def Laws.from_rows_empty():
   {==}
 
-def Laws.depth_one():
-  {==}
-
-def Laws.depth_pow2():
-  {==}
-
-def Laws.depth_odd():
-  {==}
-
-def Laws.depth_past_pow2():
-  {==}
-
-def Laws.depth_zero():
-  {==}
-
 # ---------------------------------------------------------------- helpers
 
 def false_ne_true(e: {False{} == True{} : Bool}) -> Empty:

@@ -1,6 +1,8 @@
 # Panel.load: read a row-major t x n float32 file, as numpy's
 # `a.astype("<f4").tofile(path)` writes it. Kept apart from signal.bend so the
 # proofs import no effects.
+#
+# Public: Panel.load. The load.* defs are internal.
 import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
 import bend-kit-f32array@0.2.1.0/io.bend as F

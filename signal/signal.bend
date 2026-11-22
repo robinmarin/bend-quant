@@ -1,4 +1,11 @@
-# signal: cross-sectional signal evaluation over a T x N panel. See DESIGN.md.
+# signal: cross-sectional signal evaluation over a T x N panel.
+# Design notes: https://github.com/robinmarin/bend-quant/blob/main/signal/DESIGN.md
+#
+# Public: Panel, Summary, Panel.from_rows, Panel.from_flat, rank_ic, ic,
+# forward_rank_ic, forward_ic, lead, summary, nw_t, zscore, demean, rank,
+# winsorize, ewma, rolling_mean.
+# Every other def is internal. LAWS.bend and the proofs name them, and they can
+# change in any version.
 import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
 
@@ -69,107 +76,6 @@ def Panel.from_flat(a: A.F32Array, +t: U32, +n: U32) -> Panel:
   Panel{t, n, Panel.flat.go(U32.to_nat(t), Flat{a, Nil{}}, n, 0)}
 
 # ---------------------------------------------------------------- one date
-# The complete (x, y) pairs of a date go into a scratch Array<F32>, interleaved:
-# slot 2k is the key, 2k+1 the payload, and the heapsort below runs in place.
-
-type Fill is Type:
-  Fill{buf: Array<F32>, m: U32}
-
-def fill.ok(bad: Bool, buf: Array<F32>, +m: U32, +xv: F32, +yv: F32) -> Fill:
-  match bad:
-    case True{}:
-      Fill{buf, m}
-    case False{}:
-      Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), xv), ((2 * m) + 1 : U32), yv), (m + 1 : U32)}
-
-def fill.add(st: Fill, +xv: F32, +yv: F32) -> Fill:
-  Fill{buf, m} = st
-  fill.ok(Bool.or(is_nan(xv), is_nan(yv)), buf, m, xv, yv)
-
-# smallest d with 2^d >= 2n, at least 1
-def depth(+n: U32) -> Nat:
-  1n+U32.log2(((2 * U32.max(n, 1)) - 1 : U32))
-
-# ---- in-place heapsort of m pairs by key
-
-type Heap is Type:
-  Heap{a: Array<F32>, i: U32, n: U32, done: Bool}
-
-def ninf() -> F32:
-  (0.0 - 3.0e38 : F32)
-
-def sw2(p: Array<F32> & F32, x: U32) -> Array<F32>:
-  (a, vy) = p
-  Array.set(F32, a, x, vy)
-
-def sw1(p: Array<F32> & F32, +x: U32, y: U32) -> Array<F32>:
-  (a, vx) = p
-  sw2(Array.swap(F32, a, y, vx), x)
-
-def sw(a: Array<F32>, +x: U32, y: U32) -> Array<F32>:
-  sw1(Array.get(F32, a, x), x, y)
-
-def swp(a: Array<F32>, +i: U32, +m: U32) -> Array<F32>:
-  sw(sw(a, (2 * i : U32), (2 * m : U32)), ((2 * i) + 1 : U32), ((2 * m) + 1 : U32))
-
-def heap.swap(a: Array<F32>, +i: U32, +n: U32, +m: U32) -> Heap:
-  Heap{swp(a, i, m), m, n, U32.is_eq(m, i)}
-
-def heap.r(p: Array<F32> & F32, +ki: F32, +kl: F32, +i: U32, +n: U32, +l: U32, +r: U32) -> Heap:
-  (a, kr0) = p
-  +kr = Bool.pick(F32, U32.is_lt(r, n), kr0, ninf())
-  +gl = (kl > ki : F32)
-  +m1 = Bool.pick(U32, gl, l, i)
-  +k1 = Bool.pick(F32, gl, kl, ki)
-  heap.swap(a, i, n, Bool.pick(U32, (kr > k1 : F32), r, m1))
-
-def heap.l(p: Array<F32> & F32, +ki: F32, +i: U32, +n: U32, +l: U32) -> Heap:
-  (a, kl0) = p
-  +r = (l + 1 : U32)
-  heap.r(Array.get(F32, a, (2 * r : U32)), ki, Bool.pick(F32, U32.is_lt(l, n), kl0, ninf()), i, n, l, r)
-
-def heap.i(p: Array<F32> & F32, +i: U32, +n: U32) -> Heap:
-  (a, ki) = p
-  +l = ((2 * i) + 1 : U32)
-  heap.l(Array.get(F32, a, (2 * l : U32)), ki, i, n, l)
-
-def heap.step(a: Array<F32>, +i: U32, +n: U32) -> Heap:
-  heap.i(Array.get(F32, a, (2 * i : U32)), i, n)
-
-def sift.go(fuel: Nat, s: Heap) -> Array<F32>:
-  match fuel:
-    case 0n:
-      Heap{a, _, _, _} = s
-      a
-    case 1n+p:
-      match s:
-        case Heap{a, i, n, done}:
-          match done:
-            case True{}:
-              a
-            case False{}:
-              sift.go(p, heap.step(a, i, n))
-
-def sift(a: Array<F32>, +i: U32, +n: U32) -> Array<F32>:
-  sift.go(32n, Heap{a, i, n, False{}})
-
-def heapify(k: Nat, a: Array<F32>, +i: U32, +n: U32) -> Array<F32>:
-  match k:
-    case 0n:
-      a
-    case 1n+p:
-      heapify(p, sift(a, i, n), (i - 1 : U32), n)
-
-def sortdown(k: Nat, a: Array<F32>, +e: U32) -> Array<F32>:
-  match k:
-    case 0n:
-      a
-    case 1n+p:
-      sortdown(p, sift(swp(a, 0, e), 0, e), (e - 1 : U32))
-
-def hsort(a: Array<F32>, +m: U32) -> Array<F32>:
-  +h = (m >> 1n : U32)
-  sortdown(U32.to_nat((m - 1 : U32)), heapify(U32.to_nat(h), a, (h - 1 : U32), m), (m - 1 : U32))
 
 type Two<-A: Data> is Data:
   Two{l: List<&2, A>, r: List<&2, A>}
@@ -295,68 +201,6 @@ def tree(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>) -> Tr<A>:
 def rank_of(~A: Data, ~le: A -> A -> Bool, +t: Tr<A>, +q: A) -> Nat:
   1n+Nat.add(dlt(~A, ~le, t, q, root_lt(~A, ~le, t, q)), dle(~A, ~le, t, q, root_le(~A, ~le, t, q)))
 
-# ---- two-pass Pearson over m pairs
-
-type Acc is Type:
-  Acc{a: Array<F32>, x: F32, y: F32, z: F32}
-
-def ps.b(p: Array<F32> & F32, +va: F32, +ma: F32, +mb: F32, +saa: F32, +sbb: F32, +sab: F32) -> Acc:
-  (a, vb) = p
-  +da = (va - ma : F32)
-  +db = (vb - mb : F32)
-  Acc{a, (saa + (da * da) : F32), (sbb + (db * db) : F32), (sab + (da * db) : F32)}
-
-def ps.a(p: Array<F32> & F32, +k: U32, +ma: F32, +mb: F32, +saa: F32, +sbb: F32, +sab: F32) -> Acc:
-  (a, va) = p
-  ps.b(Array.get(F32, a, ((2 * k) + 1 : U32)), va, ma, mb, saa, sbb, sab)
-
-# ponytail: plain running sums within a date; fine to a few thousand names, pairwise if N grows
-def cent(k: Nat, s: Acc, +i: U32, +ma: F32, +mb: F32) -> F32:
-  match k:
-    case 0n:
-      Acc{_, saa, sbb, sab} = s
-      (sab / F32.sqrt((saa * sbb : F32)) : F32)
-    case 1n+p:
-      Acc{a, saa, sbb, sab} = s
-      cent(p, ps.a(Array.get(F32, a, (2 * i : U32)), i, ma, mb, saa, sbb, sab), (i + 1 : U32), ma, mb)
-
-def sm.b(p: Array<F32> & F32, +va: F32, +sa: F32, +sb: F32) -> Acc:
-  (a, vb) = p
-  Acc{a, (sa + va : F32), (sb + vb : F32), 0.0}
-
-def sm.a(p: Array<F32> & F32, +k: U32, +sa: F32, +sb: F32) -> Acc:
-  (a, va) = p
-  sm.b(Array.get(F32, a, ((2 * k) + 1 : U32)), va, sa, sb)
-
-def sums(k: Nat, s: Acc, +i: U32) -> Acc:
-  match k:
-    case 0n:
-      s
-    case 1n+p:
-      Acc{a, sa, sb, _} = s
-      sums(p, sm.a(Array.get(F32, a, (2 * i : U32)), i, sa, sb), (i + 1 : U32))
-
-def pearson.k(s: Acc, +m: U32) -> F32:
-  Acc{a, sa, sb, _} = s
-  +mf = U32.to_f32(m)
-  cent(U32.to_nat(m), Acc{a, 0.0, 0.0, 0.0}, 0, (sa / mf : F32), (sb / mf : F32))
-
-def pearson(a: Array<F32>, +m: U32) -> F32:
-  pearson.k(sums(U32.to_nat(m), Acc{a, 0.0, 0.0, 0.0}, 0), m)
-
-# ---- the IC of one date
-
-def date.m(small: Bool, buf: Array<F32>, +m: U32) -> F32:
-  match small:
-    case True{}:
-      nan()
-    case False{}:
-      pearson(buf, m)
-
-def date.fin(st: Fill) -> F32:
-  Fill{buf, +m} = st
-  date.m(U32.is_lt(m, 3), buf, m)
-
 # ---- the complete pairs of a date: the only thing an IC reads (laws date_ic_*)
 
 type Pr is Data:
@@ -379,15 +223,6 @@ def both(p: Pr) -> Bool:
 
 def complete(xs: List<&2, F32>, ys: List<&2, F32>) -> List<&2, Pr>:
   List.filter(~Pr, ~both, zip2(xs, ys))
-
-def fill.pairs(ps: List<&2, Pr>, st: Fill) -> Fill:
-  match ps:
-    case Nil{}:
-      st
-    case Con{p, t}:
-      Pr{x, y} = p
-      Fill{buf, +m} = st
-      fill.pairs(t, Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), x), ((2 * m) + 1 : U32), y), (m + 1 : U32)})
 
 def nat_f32(n: Nat) -> F32:
   U32.to_f32(U32.from_nat(n))
@@ -516,9 +351,42 @@ def prep(+ps: List<&2, Pr>, rank: Bool) -> List<&2, Pr>:
     case False{}:
       ps
 
+# ---- two-pass Pearson over the pairs
+# ponytail: plain running sums within a date; fine to a few thousand names, pairwise if N grows
+
+def pr.sum(ps: List<&2, Pr>, +sa: F32, +sb: F32) -> Pr:
+  match ps:
+    case Nil{}:
+      Pr{sa, sb}
+    case Con{Pr{+x, +y}, t}:
+      pr.sum(t, (sa + x : F32), (sb + y : F32))
+
+def pr.cent(ps: List<&2, Pr>, +ma: F32, +mb: F32, +saa: F32, +sbb: F32, +sab: F32) -> F32:
+  match ps:
+    case Nil{}:
+      (sab / F32.sqrt((saa * sbb : F32)) : F32)
+    case Con{Pr{+x, +y}, t}:
+      +da = (x - ma : F32)
+      +db = (y - mb : F32)
+      pr.cent(t, ma, mb, (saa + (da * da) : F32), (sbb + (db * db) : F32), (sab + (da * db) : F32))
+
+def pearson.of(s: Pr, ps: List<&2, Pr>, +m: F32) -> F32:
+  Pr{sa, sb} = s
+  pr.cent(ps, (sa / m : F32), (sb / m : F32), 0.0, 0.0, 0.0)
+
+def pearson(+ps: List<&2, Pr>) -> F32:
+  pearson.of(pr.sum(ps, 0.0, 0.0), ps, nat_f32(List.length(&2, Pr, ps)))
+
+def date.m(small: Bool, +ps: List<&2, Pr>) -> F32:
+  match small:
+    case True{}:
+      nan()
+    case False{}:
+      pearson(ps)
+
 # the IC of a list of complete pairs; NaN for fewer than 3
 def core(+ps: List<&2, Pr>, +rank: Bool) -> F32:
-  date.fin(fill.pairs(prep(ps, rank), Fill{Array.new(F32, depth(U32.from_nat(List.length(&2, Pr, ps))), 0.0), 0}))
+  date.m(Nat.is_lt(List.length(&2, Pr, ps), 3n), prep(ps, rank))
 
 # NaN when fewer than 3 names are present in both rows
 def date_ic(x: List<&2, F32>, y: List<&2, F32>, +rank: Bool) -> F32:
@@ -752,43 +620,49 @@ def row.rank(+xs: List<&2, F32>, +n: U32) -> List<&2, F32>:
   +vs = drop_nan(xs)
   pct.go(xs, tree(~F32, ~F32.is_le, vs), (2.0 * nat_f32(List.length(&2, F32, vs)) : F32))
 
-def fill.idx.add(st: Fill, +v: F32, +i: U32) -> Fill:
-  Fill{buf, m} = st
-  fill.ok(is_nan(v), buf, m, v, U32.to_f32(i))
-
-# the present values of a row, as keys with their index as payload
-def fill.idx(k: Nat, xs: List<&2, F32>, +i: U32, st: Fill) -> Fill:
-  match k xs:
-    case 0n _:
-      st
-    case 1n+p Nil{}:
-      st
-    case 1n+p Con{v, t}:
-      fill.idx(p, t, (i + 1 : U32), fill.idx.add(st, v, i))
-
 # -- winsorize: clip at the q and 1 - q quantiles (linear, as pandas quantile)
 
-def q.at.b(p: Array<F32> & F32, +lo: F32, +t: F32) -> Array<F32> & F32:
-  (a, hi) = p
-  (a, (lo + (t * (hi - lo))) : F32)
+# the present values, keyed for msort
+def wz.kv1(b: Bool, +x: F32, t: List<&2, KV<F32, Unit>>) -> List<&2, KV<F32, Unit>>:
+  match b:
+    case True{}:
+      t
+    case False{}:
+      KV{x, Unit{}} <> t
 
-def q.at.a(p: Array<F32> & F32, +j: U32, +t: F32) -> Array<F32> & F32:
-  (a, lo) = p
-  q.at.b(Array.get(F32, a, (2 * j : U32)), lo, t)
+def wz.kv(xs: List<&2, F32>) -> List<&2, KV<F32, Unit>>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      wz.kv1(is_nan(x), x, wz.kv(t))
 
-def q.at.pick(empty: Bool, a: Array<F32>, +i: U32, +j: U32, +t: F32) -> Array<F32> & F32:
+# key k of a list; NaN past the end
+def nth(xs: List<&2, KV<F32, Unit>>, k: Nat) -> F32:
+  match xs:
+    case Nil{}:
+      nan()
+    case Con{KV{x, _}, t}:
+      match k:
+        case 0n:
+          x
+        case 1n+p:
+          nth(t, p)
+
+def q.at.pick(empty: Bool, +s: List<&2, KV<F32, Unit>>, +i: U32, +j: U32, +t: F32) -> F32:
   match empty:
     case True{}:
-      (a, nan())
+      nan()
     case False{}:
-      q.at.a(Array.get(F32, a, (2 * i : U32)), j, t)
+      +lo = nth(s, U32.to_nat(i))
+      (lo + (t * (nth(s, U32.to_nat(j)) - lo)) : F32)
 
 # the q quantile of m sorted keys; NaN for m = 0
-def q.at(a: Array<F32>, +m: U32, +q: F32) -> Array<F32> & F32:
+def q.at(+s: List<&2, KV<F32, Unit>>, +m: U32, +q: F32) -> F32:
   +h = ((U32.to_f32(m) - 1.0) * q : F32)
   +i = F32.to_u32(F32.floor(h))
   +j = U32.min((i + 1 : U32), (m - 1 : U32))
-  q.at.pick(U32.is_eq(m, 0), a, i, j, (h - F32.floor(h) : F32))
+  q.at.pick(U32.is_eq(m, 0), s, i, j, (h - F32.floor(h) : F32))
 
 def clip(xs: List<&2, F32>, +lo: F32, +hi: F32) -> List<&2, F32>:
   match xs:
@@ -797,20 +671,10 @@ def clip(xs: List<&2, F32>, +lo: F32, +hi: F32) -> List<&2, F32>:
     case Con{+x, t}:
       Bool.pick(F32, is_nan(x), x, F32.max(lo, F32.min(x, hi))) <> clip(t, lo, hi)
 
-def wz.hi(p: Array<F32> & F32, +xs: List<&2, F32>, +lo: F32) -> List<&2, F32>:
-  (_, hi) = p
-  clip(xs, lo, hi)
-
-def wz.lo(p: Array<F32> & F32, +xs: List<&2, F32>, +m: U32, +q: F32) -> List<&2, F32>:
-  (a, lo) = p
-  wz.hi(q.at(a, m, (1.0 - q : F32)), xs, lo)
-
-def wz.of(st: Fill, +xs: List<&2, F32>, +q: F32) -> List<&2, F32>:
-  Fill{buf, +m} = st
-  wz.lo(q.at(hsort(buf, m), m, q), xs, m, q)
-
-def row.winsorize(+xs: List<&2, F32>, +n: U32, +q: F32) -> List<&2, F32>:
-  wz.of(fill.idx(U32.to_nat(n), xs, 0, Fill{Array.new(F32, depth(n), 0.0), 0}), xs, q)
+def row.winsorize(+xs: List<&2, F32>, +q: F32) -> List<&2, F32>:
+  +s = msort(~F32, ~Unit, ~F32.is_le, wz.kv(xs))
+  +m = U32.from_nat(List.length(&2, KV<F32, Unit>, s))
+  clip(xs, q.at(s, m, q), q.at(s, m, (1.0 - q : F32)))
 
 # ---- row-wise panel transforms
 
@@ -828,8 +692,8 @@ def rank.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
   row.rank(x, n)
 
 def winsorize.f(c: Cfg, x: List<&2, F32>) -> List<&2, F32>:
-  Cfg{n, q} = c
-  row.winsorize(x, n, q)
+  Cfg{_, q} = c
+  row.winsorize(x, q)
 
 # Each date: (x - mean) / sd across names.
 def zscore(p: Panel) -> Panel:

@@ -28,22 +28,6 @@ law from_rows_ragged_last:
 law from_rows_empty:
   {is_some(S.Panel.from_rows(Nil{})) == True{} : Bool}
 
-# The scratch array holds 2^depth(n) slots, two per name: at least 2n.
-law depth_one:
-  {S.depth(1) == 1n : Nat}
-
-law depth_pow2:
-  {S.depth(1024) == 11n : Nat}
-
-law depth_odd:
-  {S.depth(1000) == 11n : Nat}
-
-law depth_past_pow2:
-  {S.depth(1025) == 12n : Nat}
-
-law depth_zero:
-  {S.depth(0) == 1n : Nat}
-
 # ---------------------------------------------------------------- alignment
 # These are statements over every input, not examples. The IC of one date
 # (S.date_ic) is F32 arithmetic and stays opaque: the laws say which rows reach
