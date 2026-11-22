@@ -314,18 +314,54 @@ law rank_count:
   for +q: A
   {S.rank_of(~A, ~le, S.tree(~A, ~le, xs), q) == 1n+Nat.add(cnt_lt(~A, ~le, xs, q), cnt_le(~A, ~le, xs, q)) : Nat}
 
-def spec_ranks(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +all: List<&2, A>) -> List<&2, Nat>:
+# ---- the rank IC's pairs
+
+def keys(-A: Data, -B: Data, xs: List<&2, S.KV<A, B>>) -> List<&2, A>:
   match xs:
     case Nil{}:
       Nil{}
-    case Con{+q, t}:
-      (1n+Nat.add(cnt_lt(~A, ~le, all, q), cnt_le(~A, ~le, all, q))) <> spec_ranks(~A, ~le, t, all)
+    case Con{x, t}:
+      S.key(A, B, x) <> keys(A, B, t)
 
-# ranks(xs) is that number for each element, in place.
-law ranks_spec:
+def vals(-A: Data, -B: Data, xs: List<&2, S.KV<A, B>>) -> List<&2, B>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, t}:
+      S.val(A, B, x) <> vals(A, B, t)
+
+# 2 x the average 1-based rank of q among xs
+def avg2(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>, +q: A) -> Nat:
+  1n+Nat.add(cnt_lt(~A, ~le, xs, q), cnt_le(~A, ~le, xs, q))
+
+def kv_eq(x: S.KV<Nat, Nat>, r: S.KV<Nat, Nat>) -> Bool:
+  S.KV{a, b} = x
+  S.KV{c, d} = r
+  Bool.and(Nat.is_eq(a, c), Nat.is_eq(b, d))
+
+# how often r occurs in xs
+def count(xs: List<&2, S.KV<Nat, Nat>>, +r: S.KV<Nat, Nat>) -> Nat:
+  match xs:
+    case Nil{}:
+      0n
+    case Con{x, t}:
+      Nat.add(ind(kv_eq(x, r)), count(t, r))
+
+# each pair (x, y) as (2 x rank of x among xs, 2 x rank of y among ys)
+def spec_pairs(~A: Data, ~le: A -> A -> Bool, ps: List<&2, S.KV<A, A>>, +xs: List<&2, A>, +ys: List<&2, A>) -> List<&2, S.KV<Nat, Nat>>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case Con{S.KV{x, y}, t}:
+      S.KV{avg2(~A, ~le, xs, x), avg2(~A, ~le, ys, y)} <> spec_pairs(~A, ~le, t, xs, ys)
+
+# The rank IC's pairs are the average-rank pairs of the spec, each as often,
+# in some order: x ranked among the xs, y among the ys.
+law rank_pairs:
   for ~A: Data
   for ~le: A -> A -> Bool
   for ~le_total: @x: A -> @y: A -> {le(x, y) == False{} : Bool} -> {le(y, x) == True{} : Bool}
   for ~le_trans: @x: A -> @y: A -> @z: A -> {le(x, y) == True{} : Bool} -> {le(y, z) == True{} : Bool} -> {le(x, z) == True{} : Bool}
-  for +xs: List<&2, A>
-  {S.ranks(~A, ~le, xs) == spec_ranks(~A, ~le, xs, xs) : List<&2, Nat>}
+  for +ps: List<&2, S.KV<A, A>>
+  for +r: S.KV<Nat, Nat>
+  {count(S.rank2(~A, ~le, ps), r) == count(spec_pairs(~A, ~le, ps, keys(A, A, ps), vals(A, A, ps)), r) : Nat}

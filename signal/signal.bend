@@ -295,16 +295,6 @@ def tree(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>) -> Tr<A>:
 def rank_of(~A: Data, ~le: A -> A -> Bool, +t: Tr<A>, +q: A) -> Nat:
   1n+Nat.add(dlt(~A, ~le, t, q, root_lt(~A, ~le, t, q)), dle(~A, ~le, t, q, root_le(~A, ~le, t, q)))
 
-def ranks.go(~A: Data, ~le: A -> A -> Bool, xs: List<&2, A>, +t: Tr<A>) -> List<&2, Nat>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{x, rest}:
-      rank_of(~A, ~le, t, x) <> ranks.go(~A, ~le, rest, t)
-
-def ranks(~A: Data, ~le: A -> A -> Bool, +xs: List<&2, A>) -> List<&2, Nat>:
-  ranks.go(~A, ~le, xs, tree(~A, ~le, xs))
-
 # ---- two-pass Pearson over m pairs
 
 type Acc is Type:
@@ -399,40 +389,130 @@ def fill.pairs(ps: List<&2, Pr>, st: Fill) -> Fill:
       Fill{buf, +m} = st
       fill.pairs(t, Fill{Array.set(F32, Array.set(F32, buf, (2 * m : U32), x), ((2 * m) + 1 : U32), y), (m + 1 : U32)})
 
-def fsts(ps: List<&2, Pr>) -> List<&2, F32>:
-  match ps:
-    case Nil{}:
-      Nil{}
-    case Con{p, t}:
-      Pr{x, _} = p
-      x <> fsts(t)
-
-def snds(ps: List<&2, Pr>) -> List<&2, F32>:
-  match ps:
-    case Nil{}:
-      Nil{}
-    case Con{p, t}:
-      Pr{_, y} = p
-      y <> snds(t)
-
 def nat_f32(n: Nat) -> F32:
   U32.to_f32(U32.from_nat(n))
 
-def zip_ranks(xs: List<&2, Nat>, ys: List<&2, Nat>) -> List<&2, Pr>:
+# ---- rank IC by two sorts
+# Sort the pairs by x and replace each x with its rank, then the same for y.
+# Pearson reads the pairs in any order, so nothing is unsorted. Law
+# rank_pairs: the rank pairs are those of the spec, each as often.
+
+type KV<-A: Data, -B: Data> is Data:
+  KV{k: A, v: B}
+
+def key(-A: Data, -B: Data, x: KV<A, B>) -> A:
+  KV{k, _} = x
+  k
+
+def val(-A: Data, -B: Data, x: KV<A, B>) -> B:
+  KV{_, v} = x
+  v
+
+def kle(~A: Data, ~B: Data, ~le: A -> A -> Bool, x: KV<A, B>, y: KV<A, B>) -> Bool:
+  le(key(A, B, x), key(A, B, y))
+
+# merge with the heads unpacked; d is kle(x, y)
+def mrg(~A: Data, ~B: Data, ~le: A -> A -> Bool, xt: List<&2, KV<A, B>>, yt: List<&2, KV<A, B>>, +x: KV<A, B>, +y: KV<A, B>, d: Bool) -> List<&2, KV<A, B>>:
+  match xt yt d:
+    case Nil{} _ True{}:
+      x <> y <> yt
+    case Con{+a, at} _ True{}:
+      x <> mrg(~A, ~B, ~le, at, yt, a, y, kle(~A, ~B, ~le, a, y))
+    case _ Nil{} False{}:
+      y <> x <> xt
+    case _ Con{+b, bt} False{}:
+      y <> mrg(~A, ~B, ~le, xt, bt, x, b, kle(~A, ~B, ~le, x, b))
+
+def merge(~A: Data, ~B: Data, ~le: A -> A -> Bool, xs: List<&2, KV<A, B>>, ys: List<&2, KV<A, B>>) -> List<&2, KV<A, B>>:
   match xs ys:
-    case Con{x, xt} Con{y, yt}:
-      Pr{nat_f32(x), nat_f32(y)} <> zip_ranks(xt, yt)
-    case Con{_, _} Nil{}:
-      Nil{}
     case Nil{} _:
+      ys
+    case Con{x, xt} Nil{}:
+      x <> xt
+    case Con{+x, xt} Con{+y, yt}:
+      mrg(~A, ~B, ~le, xt, yt, x, y, kle(~A, ~B, ~le, x, y))
+
+# only runs when msorted's fuel is short, which msort never lets happen
+def isort(~A: Data, ~B: Data, ~le: A -> A -> Bool, xs: List<&2, KV<A, B>>) -> List<&2, KV<A, B>>:
+  match xs:
+    case Nil{}:
       Nil{}
+    case Con{x, t}:
+      merge(~A, ~B, ~le, x <> Nil{}, isort(~A, ~B, ~le, t))
+
+def msorted(~A: Data, ~B: Data, ~le: A -> A -> Bool, k: Nat, two: Two<KV<A, B>>) -> List<&2, KV<A, B>>:
+  match k:
+    case 0n:
+      Two{l, r} = two
+      merge(~A, ~B, ~le, isort(~A, ~B, ~le, l), isort(~A, ~B, ~le, r))
+    case 1n+(+p):
+      Two{l, r} = two
+      merge(~A, ~B, ~le, msorted(~A, ~B, ~le, p, deal(KV<A, B>, l)), msorted(~A, ~B, ~le, p, deal(KV<A, B>, r)))
+
+def msort(~A: Data, ~B: Data, ~le: A -> A -> Bool, +xs: List<&2, KV<A, B>>) -> List<&2, KV<A, B>>:
+  msorted(~A, ~B, ~le, {1n+U32.log2(U32.from_nat(List.length(&2, KV<A, B>, xs))) : Nat}, deal(KV<A, B>, xs))
+
+# le(key of the head of t, v); False on an empty list
+def nxt(~A: Data, ~B: Data, ~le: A -> A -> Bool, t: List<&2, KV<A, B>>, +v: A) -> Bool:
+  match t:
+    case Nil{}:
+      False{}
+    case Con{x, _}:
+      le(key(A, B, x), v)
+
+def emit(-B: Data, ys: List<&2, B>, +r: Nat, acc: List<&2, KV<B, Nat>>) -> List<&2, KV<B, Nat>>:
+  match ys:
+    case Nil{}:
+      acc
+    case Con{y, t}:
+      emit(B, t, r, KV{y, r} <> acc)
+
+# a list sorted by key in; (value, 2 x the average rank of its key) out.
+# The current run has key v, c values ys, and p values before it.
+def runs(~A: Data, ~B: Data, ~le: A -> A -> Bool, ps: List<&2, KV<A, B>>, +v: A, +p: Nat, +c: Nat, ys: List<&2, B>, acc: List<&2, KV<B, Nat>>, d: Bool) -> List<&2, KV<B, Nat>>:
+  match ps d:
+    case Nil{} _:
+      emit(B, ys, 1n+Nat.add(Nat.add(p, p), c), acc)
+    case Con{KV{_, y}, +t} True{}:
+      runs(~A, ~B, ~le, t, v, p, 1n+c, y <> ys, acc, nxt(~A, ~B, ~le, t, v))
+    case Con{KV{+w, y}, +t} False{}:
+      runs(~A, ~B, ~le, t, w, Nat.add(p, c), 1n, y <> Nil{}, emit(B, ys, 1n+Nat.add(Nat.add(p, p), c), acc), nxt(~A, ~B, ~le, t, w))
+
+def rk(~A: Data, ~B: Data, ~le: A -> A -> Bool, ps: List<&2, KV<A, B>>) -> List<&2, KV<B, Nat>>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case Con{KV{+x, y}, +t}:
+      runs(~A, ~B, ~le, t, x, 0n, 1n, y <> Nil{}, Nil{}, nxt(~A, ~B, ~le, t, x))
+
+# sort by key and rank it
+def step(~A: Data, ~B: Data, ~le: A -> A -> Bool, +ps: List<&2, KV<A, B>>) -> List<&2, KV<B, Nat>>:
+  rk(~A, ~B, ~le, msort(~A, ~B, ~le, ps))
+
+# (x, y) pairs in, (2 x rank of x, 2 x rank of y) out, in some order
+def rank2(~A: Data, ~le: A -> A -> Bool, +ps: List<&2, KV<A, A>>) -> List<&2, KV<Nat, Nat>>:
+  step(~A, ~Nat, ~le, step(~A, ~A, ~le, ps))
+
+def pr_kv(ps: List<&2, Pr>) -> List<&2, KV<F32, F32>>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case Con{Pr{x, y}, t}:
+      KV{x, y} <> pr_kv(t)
+
+def kv_pr(xs: List<&2, KV<Nat, Nat>>) -> List<&2, Pr>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{KV{a, b}, t}:
+      Pr{nat_f32(a), nat_f32(b)} <> kv_pr(t)
 
 # the pairs a Pearson IC runs on: the values, or for a rank IC their ranks
-# (2 x the average rank; Pearson doesn't see the scale)
+# (2 x the average rank; Pearson doesn't see the scale or the order)
 def prep(+ps: List<&2, Pr>, rank: Bool) -> List<&2, Pr>:
   match rank:
     case True{}:
-      zip_ranks(ranks(~F32, ~F32.is_le, fsts(ps)), ranks(~F32, ~F32.is_le, snds(ps)))
+      kv_pr(rank2(~F32, ~F32.is_le, pr_kv(ps)))
     case False{}:
       ps
 

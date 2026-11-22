@@ -2,6 +2,7 @@ import Base
 import ./LAWS.bend as Laws
 import ./signal.bend as S
 import ./ranks_proof.bend as RP
+import ./sort_proof.bend as SP
 
 def Laws.from_rows_equal():
   {==}
@@ -291,23 +292,12 @@ def Laws.date_ic_missing_x(xs, ys, rank, i, v, x, h1, h2):
 def Laws.rank_count(A, le, le_total, le_trans, xs, q):
   RP.rank_count(~A, ~le, ~le_total, ~le_trans, xs, q)
 
-def ranks_go(~A: Data, ~le: A -> A -> Bool, ~le_total: @x: A -> @y: A -> {le(x, y) == False{} : Bool} -> {le(y, x) == True{} : Bool}, ~le_trans: @x: A -> @y: A -> @z: A -> {le(x, y) == True{} : Bool} -> {le(y, z) == True{} : Bool} -> {le(x, z) == True{} : Bool}, +ys: List<&2, A>, +all: List<&2, A>) -> {S.ranks.go(~A, ~le, ys, S.tree(~A, ~le, all)) == Laws.spec_ranks(~A, ~le, ys, all) : List<&2, Nat>}:
-  match ys:
-    case Nil{}:
-      {==}
-    case Con{+q, +t}:
-      +h = S.rank_of(~A, ~le, S.tree(~A, ~le, all), q)
-      +h2 = {1n+Nat.add(Laws.cnt_lt(~A, ~le, all, q), Laws.cnt_le(~A, ~le, all, q)) : Nat}
-      +rt = S.ranks.go(~A, ~le, t, S.tree(~A, ~le, all))
-      +st = Laws.spec_ranks(~A, ~le, t, all)
-      Equal.trans(List<&2, Nat>, h <> rt, h2 <> rt, h2 <> st, Equal.cong(Nat, List<&2, Nat>, z => z <> rt, h, h2, RP.rank_count(~A, ~le, ~le_total, ~le_trans, all, q)), Equal.cong(List<&2, Nat>, List<&2, Nat>, z => h2 <> z, rt, st, ranks_go(~A, ~le, ~le_total, ~le_trans, t, all)))
-
-def Laws.ranks_spec(A, le, le_total, le_trans, xs):
-  ranks_go(~A, ~le, ~le_total, ~le_trans, xs, xs)
-
 # Nat instances: --verdict checks the template laws through a concrete order.
 def rank_count_nat(+xs: List<&2, Nat>, +q: Nat) -> {S.rank_of(~Nat, ~Nat.is_le, S.tree(~Nat, ~Nat.is_le, xs), q) == 1n+Nat.add(Laws.cnt_lt(~Nat, ~Nat.is_le, xs, q), Laws.cnt_le(~Nat, ~Nat.is_le, xs, q)) : Nat}:
   Laws.rank_count(~Nat, ~Nat.is_le, ~RP.nat_le_total, ~RP.nat_le_trans, xs, q)
 
-def ranks_spec_nat(+xs: List<&2, Nat>) -> {S.ranks(~Nat, ~Nat.is_le, xs) == Laws.spec_ranks(~Nat, ~Nat.is_le, xs, xs) : List<&2, Nat>}:
-  Laws.ranks_spec(~Nat, ~Nat.is_le, ~RP.nat_le_total, ~RP.nat_le_trans, xs)
+def Laws.rank_pairs(A, le, le_total, le_trans, ps, r):
+  SP.rank_pairs(~A, ~le, ~le_total, ~le_trans, ps, r)
+
+def rank_pairs_nat(+ps: List<&2, S.KV<Nat, Nat>>, +r: S.KV<Nat, Nat>) -> {Laws.count(S.rank2(~Nat, ~Nat.is_le, ps), r) == Laws.count(Laws.spec_pairs(~Nat, ~Nat.is_le, ps, Laws.keys(Nat, Nat, ps), Laws.vals(Nat, Nat, ps)), r) : Nat}:
+  Laws.rank_pairs(~Nat, ~Nat.is_le, ~RP.nat_le_total, ~RP.nat_le_trans, ps, r)

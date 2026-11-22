@@ -1,4 +1,4 @@
-# The proof that tree ranks are average ranks (laws rank_count and ranks_spec).
+# The proof that tree ranks are average ranks (law rank_count).
 # It builds up from Nat arithmetic: counts over lists, the interleave, counts over
 # a tree, the search-tree invariant, and the walk. Generic over a comparison le;
 # each fact of the order comes from le_total and le_trans.
