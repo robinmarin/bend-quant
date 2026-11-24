@@ -136,7 +136,20 @@ def FactorModel.new.pos(ok: Bool, b: L.Mat, cov_f: L.Mat, idio_var: L.Vec) -> Ma
     case False{}:
       None{}
 
-def FactorModel.new.dims(ok: Bool, b: L.Mat, cov_f: L.Mat, +idio_var: L.Vec) -> Maybe<&2, FactorModel>:
+# The header matches the rows: m rows, each of length n.
+# ponytail: same as L.Mat.ok in linalg 0.1.1.0; switch once that is published.
+def mat_ok(a: L.Mat) -> Bool:
+  L.Mat{m, n, +rows} = a
+  Bool.and(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n)))
+
+def vec_ok(v: L.Vec) -> Bool:
+  L.Vec{n, xs} = v
+  Nat.is_eq(List.length(&2, F32, xs), U32.to_nat(n))
+
+def fm_rows_ok(b: L.Mat, cov_f: L.Mat, idio_var: L.Vec) -> Bool:
+  Bool.and(mat_ok(b), Bool.and(mat_ok(cov_f), vec_ok(idio_var)))
+
+def FactorModel.new.rows(ok: Bool, b: L.Mat, cov_f: L.Mat, +idio_var: L.Vec) -> Maybe<&2, FactorModel>:
   match ok:
     case True{}:
       L.Vec{_, ds} = idio_var
@@ -144,7 +157,15 @@ def FactorModel.new.dims(ok: Bool, b: L.Mat, cov_f: L.Mat, +idio_var: L.Vec) -> 
     case False{}:
       None{}
 
-# Validates dimensions (b is N x K, cov_f is K x K, idio_var is N) and idio_var > 0.
+def FactorModel.new.dims(ok: Bool, +b: L.Mat, +cov_f: L.Mat, +idio_var: L.Vec) -> Maybe<&2, FactorModel>:
+  match ok:
+    case True{}:
+      FactorModel.new.rows(fm_rows_ok(b, cov_f, idio_var), b, cov_f, idio_var)
+    case False{}:
+      None{}
+
+# Validates dimensions (b is N x K, cov_f is K x K, idio_var is N), that every
+# header matches its rows, and idio_var > 0.
 def FactorModel.new(+b: L.Mat, +cov_f: L.Mat, +idio_var: L.Vec) -> Maybe<&2, FactorModel>:
   FactorModel.new.dims(fm_dims_ok(b, cov_f, idio_var), b, cov_f, idio_var)
 

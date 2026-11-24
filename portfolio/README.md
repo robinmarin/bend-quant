@@ -3,8 +3,8 @@
 Factor risk decomposition, analytical and constrained mean-variance optimization (Woodbury-preconditioned ADMM), hedging, dynamic risk sizing (Kelly & Grossman–Zhou), and ex-post performance attribution in Bend, following Giuseppe Paleologo's *The Elements of Quantitative Investing* (Ch 4.5, 9–14). [DESIGN.md](DESIGN.md) explains the solver and numerical choices, and [bench/README.md](bench/README.md) has the timings behind them.
 
 ```bend
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
-import bend-quant-portfolio@0.1.0.0/io.bend as PI
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
+import bend-quant-portfolio@0.1.1.0/io.bend as PI
 ```
 
 From a clone, import `./portfolio/portfolio.bend` and `./portfolio/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.0.0`'s `Vec` and `Mat` (sharing `List<&2, List<&2, F32>>` rows with `bend-quant-signal@0.1.0.0` with zero copying). `io.bend` wraps `bend-quant-linalg@0.1.0.0/io.bend` to load `FactorModel` binary files.
@@ -13,13 +13,19 @@ The types and defs in the API table below are the public ones. Every other def i
 
 ## What is proved and what is tested
 
-`LAWS.bend` states **33 structural, validation, parallel-equivalence, and causal laws** for every input, and `PROOF.bend` proves all 33 with zero `@unsafe` and no IO imports:
+`LAWS.bend` states 36 laws and `PROOF.bend` proves all of them with zero `@unsafe` and no IO imports: 7 structural laws over every input, 28 dimension guards, and 1 fixed example.
 
-- **FactorModel validation (`fm_new_mismatch_n`, `fm_new_mismatch_k`, `fm_new_nonsquare_cov`, `fm_new_sound`):** `FactorModel.new` rejects any asset-count, factor-count, or non-square `cov_f` mismatch with `None`, and whenever it succeeds guarantees aligned dimensions.
-- **No-lookahead forward PnL (`forward_pnl_mismatch`, `forward_pnl_row`):** period `i` of `forward_pnl(W, R)` pairs portfolio weight row `i` with return row `i + 1`. Row `j` of `R` is the one-period return over `(j - 1, j]`, matching `signal`'s convention; same-day pairing cannot be written with this function.
-- **Strict causality (`scan_causal`, `gz_path_causal`):** for every `k`, the first `k` states of `grossman_zhou_path(returns, ...)` depend only on the first `k` input returns. Future returns cannot affect past wealth, high watermarks, drawdowns, or sizing fractions.
-- **Parallel-sequential equivalence (`pmap_seq`):** the fork-join parallel map (`pmap`, 64 tasks at $T \ge 64$) produces the exact same list as the sequential loop (`pseq`) for every length.
-- **Dimension guards (24 laws across every module):** `exposures`, `cov_matvec`, `risk_decomp`, `active_risk`, `marginal_risk`, `risk_contrib`, `eff_breadth`, `mvo_trade_quad`, `fmp`, `alpha_decompose`, `mvo_factor_neutral`, `mvo_factor_space`, `trade_cost_linear`, `trade_cost_quad`, `trade_cost_power`, `mvo_constrained`, `hedge_instruments`, `hedge_beta_shrink`, `hedge_track_series`, `attribute_period`, `maximal_attribution`, and `selection_sizing` all return `None` on incompatible shapes.
+Structural laws (every input):
+
+- **FactorModel validation (`fm_new_sound`, `fm_new_rows_ok`):** whenever `FactorModel.new` succeeds, the headers agree (`B` is `N × K`, `cov_f` is `K × K`, `idio_var` has length `N`) and every header matches its rows. Models built with `FactorModel{...}` directly skip this check.
+- **No-lookahead forward PnL (`forward_pnl_row`):** whenever the headers match, period `i` of `forward_pnl(W, R)` pairs weight row `i` with return row `i + 1`. Row `j` of `R` is the return over `(j - 1, j]`, matching `signal`'s convention, so same-day pairing cannot be written with this function.
+- **No-lookahead forward attribution (`forward_attribute_row`):** whenever the headers match, period `i` of `forward_attribute` attributes model `i` and weight row `i` against return row `i + 1` and factor-return row `i + 1`.
+- **Strict causality (`scan_causal`, `gz_path_causal`):** for every `k`, the first `k` states of `grossman_zhou_path(returns, ...)` depend only on the first `k` returns.
+- **Parallel-sequential equivalence (`pmap_seq`):** the fork-join `pmap` (64 tasks at $T \ge 64$) gives the same list as the sequential `pseq` for every length.
+
+Dimension guards (28 laws): `FactorModel.new` (`fm_new_mismatch_n`, `fm_new_mismatch_k`, `fm_new_nonsquare_cov`), `forward_pnl`, `exposures`, `cov_matvec`, `risk_decomp`, `active_risk`, `marginal_risk`, `risk_contrib`, `eff_breadth`, `mvo_trade_quad`, `fmp`, `alpha_decompose`, `mvo_factor_neutral`, `mvo_factor_space`, `trade_cost_linear`, `trade_cost_quad`, `trade_cost_power`, `mvo_constrained` (3 laws), `hedge_instruments`, `hedge_beta_shrink`, `hedge_track_series`, `attribute_period`, `maximal_attribution`, and `selection_sizing` return `None` when headers don't fit. They compare headers only.
+
+Fixed example: `fm_new_short_rows` (a `B` whose header claims more rows than it has is rejected).
 
 Bend's checker does not reduce `F32` arithmetic, so numerical accuracy is verified against NumPy and SciPy (`SLSQP`) in `check.py` instead.
 
@@ -31,8 +37,8 @@ Load a factor model (`B` $N \times K$, `cov_f` $K \times K$, `idio_var` $N$) and
 import Base
 import bend-quant-linalg@0.1.0.0/linalg.bend as L
 import bend-quant-linalg@0.1.0.0/io.bend as LI
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
-import bend-quant-portfolio@0.1.0.0/io.bend as PI
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
+import bend-quant-portfolio@0.1.1.0/io.bend as PI
 
 def summarize(rfm: Result<&1, &1, U32 & String, P.FactorModel>, ra: Result<&1, &1, U32 & String, L.Vec>) -> String:
   match rfm ra:
@@ -80,7 +86,7 @@ def main() -> IO(Unit):
 
 | def | result |
 |---|---|
-| `P.FactorModel.new(b, cov_f, idio_var)` | `Maybe<&2, FactorModel>`; validates `N`, `K`, square `cov_f`, and `idio_var > 0` |
+| `P.FactorModel.new(b, cov_f, idio_var)` | `Maybe<&2, FactorModel>`; validates `N`, `K`, square `cov_f`, headers against rows, and `idio_var > 0` |
 | `PI.FactorModel.load(b_path, cov_f_path, idio_path, n, k)` | `IO(Result<..., FactorModel>)` from little-endian float32 files |
 | `P.exposures(fm, w)` | `Maybe<&2, L.Vec>` $b = B^\top w$ |
 | `P.cov_matvec(fm, w)` | `Maybe<&2, L.Vec>` implicit $\Omega_r w = B(\Omega_f(B^\top w)) + \Omega_\varepsilon w$ in $O(NK + K^2)$ |
@@ -139,7 +145,7 @@ def main() -> IO(Unit):
 
 ```sh
 python3 portfolio/check.py                   # needs bend, numpy, scipy
-cd portfolio && bend PROOF.bend --verdict    # verifies all 33 laws twice (including Lean-verified BendTT kernel)
+cd portfolio && bend PROOF.bend --verdict    # verifies all 36 laws twice (including Lean-verified BendTT kernel)
 ```
 
 `check.py` verifies every public function against NumPy and SciPy (`SLSQP`) across small, zero-factor (`K=0`), parallel (`T >= 64`), ill-conditioned ($\kappa(\Omega_f) = 10^4$), and constrained/turnover-aware cases:

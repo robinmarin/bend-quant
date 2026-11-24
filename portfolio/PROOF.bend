@@ -71,6 +71,26 @@ def fm_new_sound.go(ok: Bool, b: L.Mat, cf: L.Mat, d: L.Vec, fm: P.FactorModel, 
 def Laws.fm_new_sound(b, cf, d, fm, h):
   fm_new_sound.go(P.fm_dims_ok(b, cf, d), b, cf, d, fm, h)
 
+def Laws.fm_new_short_rows():
+  {==}
+
+def fm_new_rows_ok.go(ok: Bool, b: L.Mat, cf: L.Mat, d: L.Vec, fm: P.FactorModel, h: {P.FactorModel.new.rows(ok, b, cf, d) == Some{fm} : Maybe<&2, P.FactorModel>}) -> {ok == True{} : Bool}:
+  match ok:
+    case True{}:
+      {==}
+    case False{}:
+      Empty.absurd({False{} == True{} : Bool}, none_ne_some(P.FactorModel, fm, h))
+
+def fm_new_rows_ok.dims(ok: Bool, +b: L.Mat, +cf: L.Mat, +d: L.Vec, fm: P.FactorModel, h: {P.FactorModel.new.dims(ok, b, cf, d) == Some{fm} : Maybe<&2, P.FactorModel>}) -> {P.fm_rows_ok(b, cf, d) == True{} : Bool}:
+  match ok:
+    case True{}:
+      fm_new_rows_ok.go(P.fm_rows_ok(b, cf, d), b, cf, d, fm, h)
+    case False{}:
+      Empty.absurd({P.fm_rows_ok(b, cf, d) == True{} : Bool}, none_ne_some(P.FactorModel, fm, h))
+
+def Laws.fm_new_rows_ok(b, cf, d, fm, h):
+  fm_new_rows_ok.dims(P.fm_dims_ok(b, cf, d), b, cf, d, fm, h)
+
 # --- Dimension guard proofs ---
 
 def Laws.exposures_mismatch(bm, bn, brows, cf, d, wn, ws, h):
@@ -426,12 +446,73 @@ def get_tail_rows(+rs: List<&2, List<&2, F32>>, +i: Nat) -> {List.get(&2, List<&
     case Con{_, t}:
       {==}
 
-def Laws.forward_pnl_row(t, n, ws, rs, i, ht, hn):
-  +cnt = Bool.pick(U32, U32.is_lt(0, t), (t - 1 : U32), 0)
-  %Equal.sym(Bool, U32.is_eq(t, t), True{}, ht) : {Laws.get_list_maybe(F32, i, P.forward_pnl.pick(Bool.and(_, U32.is_eq(n, n)), t, ws, rs)) == Laws.dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
-  %Equal.sym(Bool, U32.is_eq(n, n), True{}, hn) : {Laws.get_list_maybe(F32, i, P.forward_pnl.pick(_, t, ws, rs)) == Laws.dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
+def Laws.forward_pnl_row(wt, wn, ws, rt, rn, rs, i, h):
+  +cnt = Bool.pick(U32, U32.is_lt(0, wt), (wt - 1 : U32), 0)
+  %Equal.sym(Bool, Bool.and(U32.is_eq(wt, rt), U32.is_eq(wn, rn)), True{}, h) : {Laws.get_list_maybe(F32, i, P.forward_pnl.pick(_, wt, ws, rs)) == Laws.dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
   ep = Laws.pmap_seq(P.RowPair, F32, Unit, P.dot_pair, P.zip_rows(ws, P.tail_rows(rs)), cnt, Unit{})
   %Equal.sym(List<&2, F32>, P.pmap(~P.RowPair, ~F32, ~Unit, ~P.dot_pair, P.zip_rows(ws, P.tail_rows(rs)), cnt, Unit{}), P.pseq(~P.RowPair, ~F32, ~Unit, ~P.dot_pair, P.zip_rows(ws, P.tail_rows(rs)), Unit{}), ep) : {List.get(&2, F32, _, i) == Laws.dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
   et = get_tail_rows(rs, i)
   %et : {List.get(&2, F32, P.pseq(~P.RowPair, ~F32, ~Unit, ~P.dot_pair, P.zip_rows(ws, P.tail_rows(rs)), Unit{}), i) == Laws.dot_maybe(List.get(&2, List<&2, F32>, ws, i), _) : Maybe<&2, F32>}
   get_pseq_dot(ws, P.tail_rows(rs), i)
+
+# --- No-lookahead forward attribution ---
+
+def at_none_2(+n: U32, +k: U32, mfm: Maybe<&2, P.FactorModel>, mr: Maybe<&2, List<&2, F32>>, mf: Maybe<&2, List<&2, F32>>) -> {None{} == Laws.attrib_at(n, k, mfm, None{}, mr, mf) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}:
+  match mfm:
+    case None{}:
+      {==}
+    case Some{_}:
+      {==}
+
+def at_none_3(+n: U32, +k: U32, mfm: Maybe<&2, P.FactorModel>, mw: Maybe<&2, List<&2, F32>>, mf: Maybe<&2, List<&2, F32>>) -> {None{} == Laws.attrib_at(n, k, mfm, mw, None{}, mf) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}:
+  match mfm mw:
+    case None{} _:
+      {==}
+    case Some{_} None{}:
+      {==}
+    case Some{_} Some{_}:
+      {==}
+
+def at_none_4(+n: U32, +k: U32, mfm: Maybe<&2, P.FactorModel>, mw: Maybe<&2, List<&2, F32>>, mr: Maybe<&2, List<&2, F32>>) -> {None{} == Laws.attrib_at(n, k, mfm, mw, mr, None{}) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}:
+  match mfm mw mr:
+    case None{} _ _:
+      {==}
+    case Some{_} None{} _:
+      {==}
+    case Some{_} Some{_} None{}:
+      {==}
+    case Some{_} Some{_} Some{_}:
+      {==}
+
+def get_pseq_attrib(+n: U32, +k: U32, +fms: List<&2, P.FactorModel>, +ws: List<&2, List<&2, F32>>, +rs: List<&2, List<&2, F32>>, +fs: List<&2, List<&2, F32>>, +i: Nat) -> {List.get(&2, Maybe<&2, P.PeriodAttrib>, P.pseq(~P.AttribItem, ~Maybe<&2, P.PeriodAttrib>, ~P.AttribDims, ~P.attrib_item_fn, P.zip_attrib(fms, ws, rs, fs), P.AttribDims{n, k}), i) == Laws.attrib_at(n, k, List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, i), List.get(&2, List<&2, F32>, fs, i)) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}:
+  match fms ws rs fs i:
+    case Nil{} _ _ _ _:
+      {==}
+    case Con{_, _} Nil{} _ _ 0n:
+      {==}
+    case Con{_, fmt} Nil{} _ _ 1n+p:
+      at_none_2(n, k, List.get(&2, P.FactorModel, fmt, p), List.get(&2, List<&2, F32>, rs, 1n+p), List.get(&2, List<&2, F32>, fs, 1n+p))
+    case Con{_, _} Con{_, _} Nil{} _ 0n:
+      {==}
+    case Con{_, fmt} Con{_, wt} Nil{} _ 1n+p:
+      at_none_3(n, k, List.get(&2, P.FactorModel, fmt, p), List.get(&2, List<&2, F32>, wt, p), List.get(&2, List<&2, F32>, fs, 1n+p))
+    case Con{_, _} Con{_, _} Con{_, _} Nil{} 0n:
+      {==}
+    case Con{_, fmt} Con{_, wt} Con{_, rt} Nil{} 1n+p:
+      at_none_4(n, k, List.get(&2, P.FactorModel, fmt, p), List.get(&2, List<&2, F32>, wt, p), List.get(&2, List<&2, F32>, rt, p))
+    case Con{_, _} Con{_, _} Con{_, _} Con{_, _} 0n:
+      {==}
+    case Con{_, fmt} Con{_, wt} Con{_, rt} Con{_, ft} 1n+p:
+      get_pseq_attrib(n, k, fmt, wt, rt, ft, p)
+
+def Laws.forward_attribute_row(fms, wt, wn, ws, rt, rn, rs, ft, fk, fs, i, h):
+  +cnt = Bool.pick(U32, U32.is_lt(0, wt), (wt - 1 : U32), 0)
+  +dims = {P.AttribDims{wn, fk} : P.AttribDims}
+  +items = P.zip_attrib(fms, ws, P.tail_rows(rs), P.tail_rows(fs))
+  +rhs = Laws.attrib_at(wn, fk, List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i), List.get(&2, List<&2, F32>, fs, 1n+i))
+  %Equal.sym(Bool, Bool.and(U32.is_eq(wt, rt), Bool.and(U32.is_eq(wt, ft), Bool.and(U32.is_eq(wn, rn), Nat.is_eq(List.length(&2, P.FactorModel, fms), U32.to_nat(wt))))), True{}, h) : {Laws.get_list_maybe(Maybe<&2, P.PeriodAttrib>, i, P.forward_attrib.pick(_, wt, wn, fk, fms, ws, rs, fs)) == rhs : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}
+  ep = Laws.pmap_seq(P.AttribItem, Maybe<&2, P.PeriodAttrib>, P.AttribDims, P.attrib_item_fn, items, cnt, dims)
+  %Equal.sym(List<&2, Maybe<&2, P.PeriodAttrib>>, P.pmap(~P.AttribItem, ~Maybe<&2, P.PeriodAttrib>, ~P.AttribDims, ~P.attrib_item_fn, items, cnt, dims), P.pseq(~P.AttribItem, ~Maybe<&2, P.PeriodAttrib>, ~P.AttribDims, ~P.attrib_item_fn, items, dims), ep) : {List.get(&2, Maybe<&2, P.PeriodAttrib>, _, i) == rhs : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}
+  %get_tail_rows(rs, i) : {List.get(&2, Maybe<&2, P.PeriodAttrib>, P.pseq(~P.AttribItem, ~Maybe<&2, P.PeriodAttrib>, ~P.AttribDims, ~P.attrib_item_fn, items, dims), i) == Laws.attrib_at(wn, fk, List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), _, List.get(&2, List<&2, F32>, fs, 1n+i)) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}
+  %get_tail_rows(fs, i) : {List.get(&2, Maybe<&2, P.PeriodAttrib>, P.pseq(~P.AttribItem, ~Maybe<&2, P.PeriodAttrib>, ~P.AttribDims, ~P.attrib_item_fn, items, dims), i) == Laws.attrib_at(wn, fk, List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, P.tail_rows(rs), i), _) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}
+  get_pseq_attrib(wn, fk, fms, ws, P.tail_rows(rs), P.tail_rows(fs), i)

@@ -27,5 +27,5 @@ Key design decisions:
 
 ### 4. Exact accounting & causality (Ch 13–14)
 - `grossman_zhou_path` is built directly on a generic left `scan` so `PROOF.bend` proves strict causality (`gz_path_causal`): future returns cannot influence past wealth, high watermark, drawdown, or sizing.
-- `forward_pnl` and `forward_attribute` follow `signal`'s convention (row $j$ of `returns` is the one-period return over $(j - 1, j]$) and pair row $t$ of `weights` with row $t + 1$ of `returns` over a 64-task fork-join `pmap`. `PROOF.bend` proves both parallel-sequential equivalence (`pmap_seq`) and no-lookahead pairing (`forward_pnl_row`).
+- `forward_pnl` and `forward_attribute` follow `signal`'s convention (row $j$ of `returns` is the one-period return over $(j - 1, j]$) and pair row $t$ of `weights` with row $t + 1$ of `returns` over a 64-task fork-join `pmap`. `PROOF.bend` proves both parallel-sequential equivalence (`pmap_seq`) and no-lookahead pairing (`forward_pnl_row`, `forward_attribute_row`).
 - All file IO is isolated in `io.bend`, so `PROOF.bend` imports zero effects and zero `@unsafe`.

@@ -13,7 +13,7 @@ def load.fm.from_maybe(mfm: Maybe<&2, P.FactorModel>) -> Result<&1, &1, U32 & St
     case Some{fm}:
       Done{fm}
     case None{}:
-      Fail{(0, "invalid FactorModel (shape mismatch or non-positive idio_var)")}
+      Fail{(0, "invalid FactorModel (shape mismatch, short file, or non-positive idio_var)")}
 
 def load.fm.wrap(rb: Result<&1, &1, U32 & String, L.Mat>, rcf: Result<&1, &1, U32 & String, L.Mat>, rd: Result<&1, &1, U32 & String, L.Vec>) -> Result<&1, &1, U32 & String, P.FactorModel>:
   match rb rcf rd:

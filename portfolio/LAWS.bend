@@ -45,6 +45,19 @@ law fm_new_sound:
   for h: {P.FactorModel.new(b, cf, d) == Some{fm} : Maybe<&2, P.FactorModel>}
   {P.fm_dims_ok(b, cf, d) == True{} : Bool}
 
+# B claims 2 rows but has 1: rejected even though every header agrees.
+law fm_new_short_rows:
+  {P.FactorModel.new(L.Mat{2, 1, [[1.0]]}, L.Mat{1, 1, [[1.0]]}, L.Vec{2, [1.0, 1.0]}) == None{} : Maybe<&2, P.FactorModel>}
+
+# A FactorModel from FactorModel.new has headers that match its rows.
+law fm_new_rows_ok:
+  for +b: L.Mat
+  for +cf: L.Mat
+  for +d: L.Vec
+  for +fm: P.FactorModel
+  for h: {P.FactorModel.new(b, cf, d) == Some{fm} : Maybe<&2, P.FactorModel>}
+  {P.fm_rows_ok(b, cf, d) == True{} : Bool}
+
 # ---------------------------------------------------------------- dimension guards
 
 law exposures_mismatch:
@@ -420,14 +433,40 @@ def get_list_maybe(-A: Data, i: Nat, m: Maybe<&2, List<&2, A>>) -> Maybe<&2, A>:
     case Some{xs}:
       List.get(&2, A, xs, i)
 
-# No-lookahead law: period i of forward_pnl(W, R) pairs weight row i with return row i + 1.
-# Same-day pairing (row i with row i) is structurally impossible.
+# No-lookahead law: whenever the headers match, period i of forward_pnl(W, R)
+# pairs weight row i with return row i + 1. Same-day pairing is impossible.
 law forward_pnl_row:
-  for +t: U32
-  for +n: U32
+  for +wt: U32
+  for +wn: U32
   for +ws: List<&2, List<&2, F32>>
+  for +rt: U32
+  for +rn: U32
   for +rs: List<&2, List<&2, F32>>
   for +i: Nat
-  for ht: {U32.is_eq(t, t) == True{} : Bool}
-  for hn: {U32.is_eq(n, n) == True{} : Bool}
-  {get_list_maybe(F32, i, P.forward_pnl(L.Mat{t, n, ws}, L.Mat{t, n, rs})) == dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
+  for h: {Bool.and(U32.is_eq(wt, rt), U32.is_eq(wn, rn)) == True{} : Bool}
+  {get_list_maybe(F32, i, P.forward_pnl(L.Mat{wt, wn, ws}, L.Mat{rt, rn, rs})) == dot_maybe(List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i)) : Maybe<&2, F32>}
+
+def attrib_at(+n: U32, +k: U32, mfm: Maybe<&2, P.FactorModel>, mw: Maybe<&2, List<&2, F32>>, mr: Maybe<&2, List<&2, F32>>, mf: Maybe<&2, List<&2, F32>>) -> Maybe<&2, Maybe<&2, P.PeriodAttrib>>:
+  match mfm mw mr mf:
+    case Some{fm} Some{w} Some{r} Some{f}:
+      Some{P.attrib_item_fn(P.AttribDims{n, k}, P.AttribItem{fm, w, r, f})}
+    case _ _ _ _:
+      None{}
+
+# No-lookahead law: whenever the headers match, period i of forward_attribute
+# attributes model i and weight row i against return row i + 1 and factor
+# return row i + 1.
+law forward_attribute_row:
+  for +fms: List<&2, P.FactorModel>
+  for +wt: U32
+  for +wn: U32
+  for +ws: List<&2, List<&2, F32>>
+  for +rt: U32
+  for +rn: U32
+  for +rs: List<&2, List<&2, F32>>
+  for +ft: U32
+  for +fk: U32
+  for +fs: List<&2, List<&2, F32>>
+  for +i: Nat
+  for h: {Bool.and(U32.is_eq(wt, rt), Bool.and(U32.is_eq(wt, ft), Bool.and(U32.is_eq(wn, rn), Nat.is_eq(List.length(&2, P.FactorModel, fms), U32.to_nat(wt))))) == True{} : Bool}
+  {get_list_maybe(Maybe<&2, P.PeriodAttrib>, i, P.forward_attribute(fms, L.Mat{wt, wn, ws}, L.Mat{rt, rn, rs}, L.Mat{ft, fk, fs})) == attrib_at(wn, fk, List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, rs, 1n+i), List.get(&2, List<&2, F32>, fs, 1n+i)) : Maybe<&2, Maybe<&2, P.PeriodAttrib>>}
