@@ -16,6 +16,15 @@ def Laws.from_rows_ragged_last():
 def Laws.from_rows_empty():
   {==}
 
+def Laws.mat_ok_rect():
+  {==}
+
+def Laws.mat_ok_wrong_m():
+  {==}
+
+def Laws.mat_ok_ragged():
+  {==}
+
 # ---------------------------------------------------------------- basic helpers
 
 def false_ne_true(e: {False{} == True{} : Bool}) -> Empty:
@@ -285,7 +294,33 @@ def Laws.transpose_involutive(rows, n, h):
       %Laws.transpose_involutive(rs, n, hrs) : {r <> L.transpose.rows(L.transpose.rows(rs, n), List.length(&2, List<&2, F32>, rs)) == r <> _ : List<&2, List<&2, F32>>}
       {==}
 
+def rows_ok_eq(+rows: List<&2, List<&2, F32>>, +a: Nat, +b: Nat, e: {a == b : Nat}, h: {L.Mat.rows.ok(rows, a) == True{} : Bool}) -> {L.Mat.rows.ok(rows, b) == True{} : Bool}:
+  %e : {L.Mat.rows.ok(rows, _) == True{} : Bool}
+  h
+
+# Mat.ok from its two halves.
+def mat_ok_intro(+m: U32, +n: U32, +rows: List<&2, List<&2, F32>>, hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}, +hr: {L.Mat.rows.ok(rows, U32.to_nat(n)) == True{} : Bool}) -> {L.Mat.ok(L.Mat{m, n, rows}) == True{} : Bool}:
+  %Equal.sym(Nat, List.length(&2, List<&2, F32>, rows), U32.to_nat(m), hl) : {Bool.and(Nat.is_eq(_, U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n))) == True{} : Bool}
+  %Equal.sym(Bool, Nat.is_eq(U32.to_nat(m), U32.to_nat(m)), True{}, nat_eq_refl(U32.to_nat(m))) : {Bool.and(_, L.Mat.rows.ok(rows, U32.to_nat(n))) == True{} : Bool}
+  hr
+
+def Laws.transpose_ok(a, h):
+  match a:
+    case L.Mat{+m, +n, +rows}:
+      +nn = U32.to_nat(n)
+      +hl = nat_eq_sound(List.length(&2, List<&2, F32>, rows), U32.to_nat(m), bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, nn), h))
+      +hr = bool_and_r(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, nn), h)
+      mat_ok_intro(n, m, L.transpose.rows(rows, nn), Laws.transpose_len(rows, nn, hr), rows_ok_eq(L.transpose.rows(rows, nn), List.length(&2, List<&2, F32>, rows), U32.to_nat(m), hl, Laws.transpose_row_len(rows, nn, hr)))
+
 # ---------------------------------------------------------------- products
+
+def pseq_len(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, xs: List<&2, A>, +c: C) -> {List.length(&2, B, L.pseq(~A, ~B, ~C, ~f, xs, c)) == List.length(&2, A, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %pseq_len(~A, ~B, ~C, ~f, t, c) : {1n+List.length(&2, B, L.pseq(~A, ~B, ~C, ~f, t, c)) == 1n+_ : Nat}
+      {==}
 
 def Laws.matvec_entry(ma, na, nx, ra, xs, i, e):
   %Equal.sym(Bool, U32.is_eq(na, nx), True{}, e) : {Laws.mv_get(L.matvec.chk(_, ma, ra, xs), i) == Laws.fmap(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, xs, List.get(&2, List<&2, F32>, ra, i)) : Maybe<&2, F32>}
@@ -314,6 +349,42 @@ def Laws.matmul_entry(ma, na, mb, nb, ra, rb, i, j, e):
   %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols), L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)) : {L.mat_get(_, i, j) == Laws.opt_dot(List.get(&2, List<&2, F32>, ra, i), List.get(&2, List<&2, F32>, bcols, j)) : Maybe<&2, F32>}
   %Equal.sym(Maybe<&2, List<&2, F32>>, List.get(&2, List<&2, F32>, L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), i), Laws.fmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, bcols, List.get(&2, List<&2, F32>, ra, i)), Laws.pseq_get(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols, i)) : {L.row_get(_, j) == Laws.opt_dot(List.get(&2, List<&2, F32>, ra, i), List.get(&2, List<&2, F32>, bcols, j)) : Maybe<&2, F32>}
   row_get_fmap(List.get(&2, List<&2, F32>, ra, i), bcols, j)
+
+def Laws.matvec_ok(ma, na, nx, ra, xs, e, ha):
+  %Equal.sym(Bool, U32.is_eq(na, nx), True{}, e) : {Laws.mv_ok(L.matvec.chk(_, ma, ra, xs)) == True{} : Bool}
+  %Equal.sym(List<&2, F32>, L.pmap(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, ma, xs), L.pseq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs), Laws.pmap_seq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, ma, xs)) : {L.Vec.ok(L.Vec{ma, _}) == True{} : Bool}
+  %Equal.sym(Nat, List.length(&2, F32, L.pseq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs)), List.length(&2, List<&2, F32>, ra), pseq_len(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs)) : {Nat.is_eq(_, U32.to_nat(ma)) == True{} : Bool}
+  bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma)), L.Mat.rows.ok(ra, U32.to_nat(na)), ha)
+
+def matmul_dots_len(+r: List<&2, F32>, cols: List<&2, List<&2, F32>>) -> {List.length(&2, F32, L.matmul.dots(r, cols)) == List.length(&2, List<&2, F32>, cols) : Nat}:
+  match cols:
+    case Nil{}:
+      {==}
+    case Con{c, ct}:
+      %matmul_dots_len(r, ct) : {1n+List.length(&2, F32, L.matmul.dots(r, ct)) == 1n+_ : Nat}
+      {==}
+
+# Every row of matmul's row loop has one entry per column of B.
+def mm_rows_ok(ra: List<&2, List<&2, F32>>, +bcols: List<&2, List<&2, F32>>, +n: Nat, +h: {List.length(&2, List<&2, F32>, bcols) == n : Nat}) -> {L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), n) == True{} : Bool}:
+  match ra:
+    case Nil{}:
+      {==}
+    case Con{+r, t}:
+      +hl = Equal.trans(Nat, List.length(&2, F32, L.matmul.dots(r, bcols)), List.length(&2, List<&2, F32>, bcols), n, matmul_dots_len(r, bcols), h)
+      %Equal.sym(Nat, List.length(&2, F32, L.matmul.dots(r, bcols)), n, hl) : {Bool.and(Nat.is_eq(_, n), L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, t, bcols), n)) == True{} : Bool}
+      %Equal.sym(Bool, Nat.is_eq(n, n), True{}, nat_eq_refl(n)) : {Bool.and(_, L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, t, bcols), n)) == True{} : Bool}
+      mm_rows_ok(t, bcols, n, h)
+
+def Laws.matmul_ok(ma, na, mb, nb, ra, rb, e, ha, hb):
+  +nn = U32.to_nat(nb)
+  +bcols = L.transpose.rows(rb, nn)
+  +rows = L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols)
+  %Equal.sym(Bool, U32.is_eq(na, mb), True{}, e) : {Laws.mm_ok(L.matmul.chk(_, ma, nb, ra, rb)) == True{} : Bool}
+  %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols), rows, Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)) : {L.Mat.ok(L.Mat{ma, nb, _}) == True{} : Bool}
+  +hra = nat_eq_sound(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma), bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma)), L.Mat.rows.ok(ra, U32.to_nat(na)), ha))
+  +hrb = bool_and_r(Nat.is_eq(List.length(&2, List<&2, F32>, rb), U32.to_nat(mb)), L.Mat.rows.ok(rb, nn), hb)
+  +hl = Equal.trans(Nat, List.length(&2, List<&2, F32>, rows), List.length(&2, List<&2, F32>, ra), U32.to_nat(ma), pseq_len(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), hra)
+  mat_ok_intro(ma, nb, rows, hl, mm_rows_ok(ra, bcols, nn, Laws.transpose_len(rb, nn, hrb)))
 
 def Laws.matmul_mismatch(ma, na, mb, nb, ra, rb, e):
   %Equal.sym(Bool, U32.is_eq(na, mb), False{}, e) : {L.matmul.chk(_, ma, nb, ra, rb) == None{} : Maybe<&2, L.Mat>}
@@ -372,14 +443,6 @@ def Laws.mirror_upper_sym(up, n, i, j, h):
           %Equal.sym(Maybe<&2, F32>, L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), r, 1n+q), L.mat_get(L.mirror_upper(sub), r, q), zip_cons_get_succ(rest, L.mirror_upper(sub), r, q, eq)) : {_ == L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), q, 1n+r) : Maybe<&2, F32>}
           %Equal.sym(Maybe<&2, F32>, L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), q, 1n+r), L.mat_get(L.mirror_upper(sub), q, r), zip_cons_get_succ(rest, L.mirror_upper(sub), q, r, eq)) : {L.mat_get(L.mirror_upper(sub), r, q) == _ : Maybe<&2, F32>}
           Laws.mirror_upper_sym(sub, p, r, q, h2)
-
-def matmul_dots_len(+r: List<&2, F32>, cols: List<&2, List<&2, F32>>) -> {List.length(&2, F32, L.matmul.dots(r, cols)) == List.length(&2, List<&2, F32>, cols) : Nat}:
-  match cols:
-    case Nil{}:
-      {==}
-    case Con{c, ct}:
-      %matmul_dots_len(r, ct) : {1n+List.length(&2, F32, L.matmul.dots(r, ct)) == 1n+_ : Nat}
-      {==}
 
 # ---------------------------------------------------------------- Cholesky & solves
 
@@ -1306,19 +1369,3 @@ def Laws.spd_pow_sym(a, p, i, j):
 def Laws.procrustes_mismatch(ma, na, mb, nb, arows, brows, e):
   %Equal.sym(Bool, Bool.and(U32.is_eq(ma, mb), U32.is_eq(na, nb)), False{}, e) : {L.procrustes.chk(_, L.Mat{ma, na, arows}, L.Mat{mb, nb, brows}) == None{} : Maybe<&2, L.Mat>}
   {==}
-
-def pinv_from_svd_m(sv: L.SVD, +m: U32, +n: U32, +tol: F32) -> {Laws.mat_m(L.pinv.from_svd(sv, m, n, tol)) == n : U32}:
-  match sv:
-    case L.SVD{L.Mat{_, _, _}, L.Vec{_, _}, L.Mat{_, _, _}}:
-      {==}
-
-def pinv_from_svd_n(sv: L.SVD, +m: U32, +n: U32, +tol: F32) -> {Laws.mat_n(L.pinv.from_svd(sv, m, n, tol)) == m : U32}:
-  match sv:
-    case L.SVD{L.Mat{_, _, _}, L.Vec{_, _}, L.Mat{_, _, _}}:
-      {==}
-
-def Laws.pinv_m(m, n, rows, tol):
-  pinv_from_svd_m(L.svd_thin(L.Mat{m, n, rows}), m, n, tol)
-
-def Laws.pinv_n(m, n, rows, tol):
-  pinv_from_svd_n(L.svd_thin(L.Mat{m, n, rows}), m, n, tol)

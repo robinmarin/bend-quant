@@ -44,10 +44,11 @@ So `F32` is the scalar type everywhere until Bend gets native `F64` (bendlang/be
 
 Bend's checker treats `F32` arithmetic as opaque, so numerical accuracy is checked against NumPy and SciPy in `check.py`, while `LAWS.bend` and `PROOF.bend` (checked with `bend PROOF.bend --verdict`) prove structural invariants for all inputs:
 
-- **Validation:** `Mat.from_rows` accepts rectangular lists and rejects ragged rows.
+- **Header checks:** ops trust the `Mat`/`Vec` header. `Mat.from_rows` builds it from the rows; `Mat.ok` / `Vec.ok` check any other matrix.
 - **Parallel equivalence (`pmap_seq`):** parallel `pmap` returns the exact same list as sequential `pseq` for every size.
-- **Shape preservation:** every op (`transpose`, `scale`, `madd`, `msub`, `diag_mul`, `mul_diag`, `outer`, `matvec`, `matmul`, `gram`, `wgram`, `slice_*`, and factorizations) produces rows matching its declared `m × n` dimensions and returns `None` on shape mismatch.
+- **Shape:** `transpose`, `matvec` and `matmul` map well-formed inputs to well-formed outputs; `cholesky`, `qr_thin` and `sym_eigen` have proved output shapes whenever they succeed. Other ops (`scale`, `madd`, `outer`, slicing, `svd_thin`, `pinv`, ...) have no shape law and are covered by `check.py`.
 - **Transpose laws:** `transpose(transpose(A)) == A` and `get(transpose(A), j, i) == get(A, i, j)` for every rectangular matrix `A`.
-- **Entry indexing:** `matvec`, `matmul`, `outer`, `diag_mul`, `mul_diag` route the exact expected rows and columns to each output entry.
-- **Symmetry:** `get(gram(A), i, j) == get(gram(A), j, i)`, `get(wgram(A, w), i, j) == get(wgram(A, w), j, i)`, and `get(spd_pow(A, p), i, j) == get(spd_pow(A, p), j, i)` for all indices `i, j`.
-- **Triangular zero-structure & factorization shapes:** `cholesky` outputs `n × n` rows with exact `0.0` strictly above the diagonal; `qr_thin` outputs `m × n` `Q` and `n × n` `R` with exact `0.0` strictly below the diagonal; `sym_eigen` outputs `n` eigenvalues and `n × n` eigenvector rows; `pinv` outputs declared `n × m` dimensions.
+- **Entry indexing:** `matvec` and `matmul` route the expected row and column to each output entry.
+- **Symmetry:** `get(M, i, j) == get(M, j, i)` for `gram(A)`, `wgram(A, w)` and `spd_pow(A, p)`, for all indices.
+- **Triangular zeros:** `cholesky` gives exact `0.0` above the diagonal, `qr_thin`'s `R` exact `0.0` below it.
+- **Dimension guards:** fallible ops return `None` when headers don't fit.

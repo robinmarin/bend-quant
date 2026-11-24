@@ -28,6 +28,18 @@ law from_rows_ragged_last:
 law from_rows_empty:
   {is_some_mat(L.Mat.from_rows(Nil{})) == True{} : Bool}
 
+# ---------------------------------------------------------------- header checks
+# Ops trust the declared m x n header. Mat.ok checks it against the rows.
+
+law mat_ok_rect:
+  {L.Mat.ok(L.Mat{2, 3, [row(3n), row(3n)]}) == True{} : Bool}
+
+law mat_ok_wrong_m:
+  {L.Mat.ok(L.Mat{3, 3, [row(3n), row(3n)]}) == False{} : Bool}
+
+law mat_ok_ragged:
+  {L.Mat.ok(L.Mat{2, 3, [row(3n), row(2n)]}) == False{} : Bool}
+
 # ---------------------------------------------------------------- parallel map
 
 law pmap_seq:
@@ -90,7 +102,27 @@ law transpose_involutive:
   for +h: {L.Mat.rows.ok(rows, n) == True{} : Bool}
   {L.transpose.rows(L.transpose.rows(rows, n), List.length(&2, List<&2, F32>, rows)) == rows : List<&2, List<&2, F32>>}
 
+# A well-formed m x n matrix transposes to a well-formed n x m matrix.
+law transpose_ok:
+  for +a: L.Mat
+  for +h: {L.Mat.ok(a) == True{} : Bool}
+  {L.Mat.ok(L.transpose(a)) == True{} : Bool}
+
 # ---------------------------------------------------------------- products
+
+def mm_ok(mm: Maybe<&2, L.Mat>) -> Bool:
+  match mm:
+    case None{}:
+      False{}
+    case Some{a}:
+      L.Mat.ok(a)
+
+def mv_ok(mv: Maybe<&2, L.Vec>) -> Bool:
+  match mv:
+    case None{}:
+      False{}
+    case Some{v}:
+      L.Vec.ok(v)
 
 def mv_get(mv: Maybe<&2, L.Vec>, i: Nat) -> Maybe<&2, F32>:
   match mv:
@@ -136,6 +168,30 @@ law matmul_entry:
   for +j: Nat
   for e: {U32.is_eq(na, mb) == True{} : Bool}
   {mm_get(L.matmul(L.Mat{ma, na, ra}, L.Mat{mb, nb, rb}), i, j) == opt_dot(List.get(&2, List<&2, F32>, ra, i), List.get(&2, List<&2, F32>, L.transpose.rows(rb, U32.to_nat(nb)), j)) : Maybe<&2, F32>}
+
+# matvec of a well-formed matrix succeeds with a well-formed vector of length m.
+law matvec_ok:
+  for +ma: U32
+  for +na: U32
+  for +nx: U32
+  for +ra: List<&2, List<&2, F32>>
+  for +xs: List<&2, F32>
+  for e: {U32.is_eq(na, nx) == True{} : Bool}
+  for +ha: {L.Mat.ok(L.Mat{ma, na, ra}) == True{} : Bool}
+  {mv_ok(L.matvec(L.Mat{ma, na, ra}, L.Vec{nx, xs})) == True{} : Bool}
+
+# matmul of well-formed matrices succeeds with a well-formed ma x nb matrix.
+law matmul_ok:
+  for +ma: U32
+  for +na: U32
+  for +mb: U32
+  for +nb: U32
+  for +ra: List<&2, List<&2, F32>>
+  for +rb: List<&2, List<&2, F32>>
+  for e: {U32.is_eq(na, mb) == True{} : Bool}
+  for +ha: {L.Mat.ok(L.Mat{ma, na, ra}) == True{} : Bool}
+  for +hb: {L.Mat.ok(L.Mat{mb, nb, rb}) == True{} : Bool}
+  {mm_ok(L.matmul(L.Mat{ma, na, ra}, L.Mat{mb, nb, rb})) == True{} : Bool}
 
 # Mismatched shapes return None.
 law matmul_mismatch:
@@ -429,18 +485,3 @@ law procrustes_mismatch:
   for +brows: List<&2, List<&2, F32>>
   for e: {Bool.and(U32.is_eq(ma, mb), U32.is_eq(na, nb)) == False{} : Bool}
   {L.procrustes(L.Mat{ma, na, arows}, L.Mat{mb, nb, brows}) == None{} : Maybe<&2, L.Mat>}
-
-# pinv(A, tol) returns declared dimensions n x m for any m x n matrix A.
-law pinv_m:
-  for +m: U32
-  for +n: U32
-  for +rows: List<&2, List<&2, F32>>
-  for +tol: F32
-  {mat_m(L.pinv(L.Mat{m, n, rows}, tol)) == n : U32}
-
-law pinv_n:
-  for +m: U32
-  for +n: U32
-  for +rows: List<&2, List<&2, F32>>
-  for +tol: F32
-  {mat_n(L.pinv(L.Mat{m, n, rows}, tol)) == m : U32}
