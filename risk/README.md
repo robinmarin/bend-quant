@@ -3,8 +3,8 @@
 Factor model transformations, out-of-sample risk evaluation, fundamental factor models & covariance estimation (Ledoit–Wolf, DCC, STVU, Newey–West/Cohen HAC, Cai clustering, causal log-MAD winsorization, multi-region linking, currency rebasing), and statistical factor models (PCA/SVD, fast subspace SVD, PPCA, RMT shrinkage, Bai–Ng, Procrustes alignment) in Bend, following Giuseppe Paleologo's *The Elements of Quantitative Investing* (Chapters 4–7). [DESIGN.md](DESIGN.md) explains the numerical and architectural choices, and [bench/README.md](bench/README.md) has the timings behind them.
 
 ```bend
-import bend-quant-risk@0.1.0.0/risk.bend as R
-import bend-quant-risk@0.1.0.0/io.bend as RI
+import bend-quant-risk@0.1.1.0/risk.bend as R
+import bend-quant-risk@0.1.1.0/io.bend as RI
 ```
 
 From a clone, import `./risk/risk.bend` and `./risk/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.0.0`'s `Vec`/`Mat` and `bend-quant-portfolio@0.1.0.0`'s `FactorModel` with zero conversion boilerplate. Return panels are `T × N` (`L.Mat`), where row `t` is the one-period return over `(t - 1, t]`.
@@ -13,13 +13,24 @@ The types and defs in the API table below are the public ones. Every other def i
 
 ## What is proved and what is tested
 
-`LAWS.bend` states **41 structural symmetry, strict causality, no-lookahead, parallel-equivalence, and dimension/parameter-guard laws** for every input, and `PROOF.bend` proves all 41 under `bend PROOF.bend --verdict` (Lean-verified BendTT kernel) with zero `@unsafe` and no IO imports:
+`LAWS.bend` states 47 laws and `PROOF.bend` proves all of them under `bend PROOF.bend --verdict` (Lean-verified BendTT kernel) with zero `@unsafe` and no IO imports: 24 structural laws over every input and 23 dimension/parameter guards.
 
-- **Exact structural symmetry (12 laws):** `mirror_upper_sym`, `symmetrize_nonsquare`, `symmetrize_sym`, `sample_cov_sym`, `ewma_cov_sym`, `shrink_to_identity_sym`, `ledoit_wolf_sym`, `psd_project_sym`, `dcc_cov_sym`, `cov_newey_west_sym`, `cov_autocorr_cohen_sym`, and `link_models_ir_sym` prove bit-for-bit `L.Mat.get(M, i, j) == L.Mat.get(M, j, i)` for every covariance estimator.
-- **Strict causality (4 laws):** `scan_causal`, `winsorize_log_mad_causal`, `make_windows_get`, and `make_windows_causal` prove that the first `k` output rows of `winsorize_log_mad` depend only on the first `k` input return rows, and the first `k` rolling windows of width `w` depend only on the first `k + w` rows.
-- **No-lookahead out-of-sample evaluation (4 laws):** `pair_oos_fm_row`, `pair_oos_fmw_row`, `qdist_mismatch`, and `mvp_test_mismatch` prove that period `i` of Ch 5 OOS evaluators pairs `fms[i]` (and `weights[i]`) strictly with `returns[i + 1]` — same-day pairing is structurally impossible.
-- **Parallel-sequential equivalence (2 laws):** `pmap_seq` and `pseq_get` prove that fork-join `pmap` (64 tasks at $T \ge 64$) produces the exact same list as sequential `pseq` for every input.
-- **Dimension & parameter guards (19 laws):** `rotate_model`, `project_model`, `pushout_loadings`, `group_risk_decomp`, `qlike`, `vol_mse`, `bias_stat`, `mahalanobis_test`, `beta_error`, `cross_sectional_wls`, `cross_sectional_constrained`, `cross_sectional_ridge`, `fit_fundamental_model`, `rebase_currency`, `pca_svd`, `eigenfactor_turnover`, `align_sign`, `subspace_distance`, `impute_loadings_ts`, and `rolling_statistical_models` all return `None` on incompatible dimensions or invalid parameters.
+Structural laws (every input):
+
+- **Exact symmetry (11 laws):** `mirror_upper_sym`, `symmetrize_sym`, `sample_cov_sym`, `ewma_cov_sym`, `shrink_to_identity_sym`, `ledoit_wolf_sym`, `psd_project_sym`, `dcc_cov_sym`, `cov_newey_west_sym`, `cov_autocorr_cohen_sym` and `link_models_ir_sym` prove bit-for-bit `L.Mat.get(M, i, j) == L.Mat.get(M, j, i)` for every covariance estimator.
+- **Strict causality (4 laws):** `scan_causal`, `winsorize_log_mad_causal`, `make_windows_get` and `make_windows_causal`. The first `k` output rows of `winsorize_log_mad` depend only on the first `k` input rows. Window `j` of width `w` is rows `j .. j + w - 1`, so the first `k` windows depend only on the first `k + w - 1` rows.
+- **No-lookahead evaluation (7 laws):** `qdist_pairs`, `mahalanobis_pairs`, `mvp_pairs` and `portfolio_vol_pairs` show that each public evaluator runs its per-period metric over exactly the pairs from `pair_oos_fm` / `pair_oos_fmw`. `pair_oos_fm_row` and `pair_oos_fmw_row` show that pair `i` is `fms[i]` (and `weights[i]`) with `returns[i + 1]`. `oos_returns_row` covers rolling models: row `1 + j` of `oos_returns(R, w)` is row `j + w` of `R`, the first row after model `j`'s window.
+- **Parallel-sequential equivalence (2 laws):** `pmap_seq` and `pseq_get` prove that fork-join `pmap` (64 tasks at $T \ge 64$) gives the same list as sequential `pseq` for every input.
+
+Dimension & parameter guards (23 laws): `symmetrize`, `qdist`, `mvp_test`, `rotate_model`, `project_model`, `pushout_loadings`, `group_risk_decomp`, `qlike`, `vol_mse`, `bias_stat`, `mahalanobis_test`, `beta_error`, `cross_sectional_wls`, `cross_sectional_constrained`, `cross_sectional_ridge`, `fit_fundamental_model`, `rebase_currency`, `pca_svd`, `eigenfactor_turnover`, `align_sign`, `subspace_distance`, `impute_loadings_ts` and `rolling_statistical_models` return `None` on incompatible headers or invalid parameters. They compare headers only.
+
+To score rolling models out of sample, pair them with `oos_returns`, not the full return matrix:
+
+```bend
+match R.rolling_statistical_models(rets, w, cfg, 0) R.oos_returns(rets, w):
+  case Some{fms} Some{oos}:
+    R.qdist(fms, oos)   # model j (rows j .. j + w - 1) scored on row j + w
+```
 
 Bend's checker does not reduce `F32` arithmetic, so numerical accuracy is verified against **NumPy, SciPy (`linalg`, `special.digamma`, `orthogonal_procrustes`), scikit-learn (`LedoitWolf`), and statsmodels (`weights_bartlett`)** in `check.py` (all checks passing to `2.6e-7`–`2.0e-5`).
 
@@ -31,8 +42,8 @@ Fit a two-stage weighted statistical factor model (`K = 15`) on a `250 × 500` r
 import Base
 import bend-quant-linalg@0.1.0.0/linalg.bend as L
 import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
-import bend-quant-risk@0.1.0.0/risk.bend as R
-import bend-quant-risk@0.1.0.0/io.bend as RI
+import bend-quant-risk@0.1.1.0/risk.bend as R
+import bend-quant-risk@0.1.1.0/io.bend as RI
 
 def fit_and_summarize(rr: Result<&1, &1, U32 & String, L.Mat>) -> String:
   match rr:
@@ -143,6 +154,7 @@ def main() -> IO(Unit):
 | `R.fit_statistical_model(returns, cfg)` | Ch 7.5.1: two-stage EWMA-weighted statistical factor model with RMT shrinkage & optional subspace SVD |
 | `R.impute_loadings_ts`, `R.interpret_loadings`, `R.impute_loadings_char` | Ch 7.4.2 & 7.5.2: time-series and characteristic-based loading imputation & factor interpretation |
 | `R.rolling_statistical_models(returns, window, cfg, align_mode)` | causal rolling-window statistical models (`pmap`) with optional sign (`1`) or Procrustes (`2`) alignment |
+| `R.oos_returns(returns, window)` | `Maybe<&2, Mat>`: `returns` without its first `window - 1` rows, so the evaluators score rolling model `j` on row `j + window` |
 
 ### IO (`io.bend`)
 
@@ -155,7 +167,7 @@ def main() -> IO(Unit):
 
 ```sh
 cd risk
-bend PROOF.bend --verdict                  # 41/41 Lean-verified BendTT proofs (0 @unsafe, 0 IO)
+bend PROOF.bend --verdict                  # 47/47 Lean-verified BendTT proofs (0 @unsafe, 0 IO)
 python3 check.py                           # numerical cross-check vs NumPy/SciPy/sklearn/statsmodels
 cd bench && mkdir -p out
 bend bench_risk.bend -o out/bench_risk

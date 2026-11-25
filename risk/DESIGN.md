@@ -29,4 +29,4 @@ Full exact thin SVD (`L.svd_thin`) costs $O(\min(T, N)^2 \max(T, N))$, which is 
 - On $250 \times 500, K = 15$, achieves a **19.3× speedup** over exact `L.svd_thin` (`36.7 ms` vs `709.5 ms` on 8t, within **3.0×** of Apple Accelerate LAPACK) while matching exact singular values and subspaces to `< 6e-6` on spiked equity return panels.
 
 ### 6. Effect isolation & formal guarantees
-All binary file IO (`Returns.load`, `LoadingsSeries.load`) lives in `io.bend`, keeping `subspace_svd.bend`, `cov.bend`, `risk.bend`, `LAWS.bend`, and `PROOF.bend` completely pure (zero IO, zero `@unsafe`, 41 Lean-verified BendTT proofs).
+All binary file IO (`Returns.load`, `LoadingsSeries.load`) lives in `io.bend`, keeping `subspace_svd.bend`, `cov.bend`, `risk.bend`, `LAWS.bend`, and `PROOF.bend` completely pure (zero IO, zero `@unsafe`, 47 Lean-verified BendTT proofs).

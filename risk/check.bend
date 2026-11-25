@@ -439,6 +439,14 @@ def run_ch7.imp(ms: Maybe<&2, R.StatModelFit>, a_new: L.Mat, +g_known: L.Mat, g_
       s2 = show_mmat(R.impute_loadings_char(bs, g_known, g_new, 0.05))
       s0 ++ s1 ++ s2
 
+# qdist of the rolling models against the matching out-of-sample rows.
+def run_ch7.oos(mfms: Maybe<&2, List<&2, P.FactorModel>>, mret: Maybe<&2, L.Mat>) -> String:
+  match mfms mret:
+    case Some{fms} Some{r}:
+      show_qdist(R.qdist(fms, r))
+    case _ _:
+      "NONE\n"
+
 def run_ch7.go(+rets: L.Mat, +rets_big: L.Mat, +bp: L.Mat, +bc: L.Mat, cfp: L.Mat, cfc: L.Mat, dp: L.Vec, dc: L.Vec, a_new: L.Mat, g_known: L.Mat, g_new: L.Mat, +t: U32, +n: U32, +k: U32, +kb: U32, +win: U32) -> String:
   +mp_full = R.pca_svd(rets, n, 0.0, False{})
   cfg0 = mk_scfg(k, 0, 20.0, 40.0, 1, 1.0, 0.0, 0.1, False{}, 1.0e-8)
@@ -460,7 +468,9 @@ def run_ch7.go(+rets: L.Mat, +rets_big: L.Mat, +bp: L.Mat, +bc: L.Mat, cfp: L.Ma
   s12 = run_ch7.imp(ms0, a_new, g_known, g_new)
   s13 = show_mfms(R.rolling_statistical_models(rets, win, cfg_roll, 1))
   s14 = show_mfms(R.rolling_statistical_models(rets, win, cfg_roll, 2))
-  s0 ++ s1 ++ s2 ++ s3 ++ s4 ++ s5 ++ s6 ++ s7 ++ s8 ++ s9 ++ s10 ++ s11 ++ s12 ++ s13 ++ s14
+  +roll0 = R.rolling_statistical_models(rets, win, cfg_roll, 0)
+  s15 = show_mfms(roll0) ++ run_ch7.oos(roll0, R.oos_returns(rets, win))
+  s0 ++ s1 ++ s2 ++ s3 ++ s4 ++ s5 ++ s6 ++ s7 ++ s8 ++ s9 ++ s10 ++ s11 ++ s12 ++ s13 ++ s14 ++ s15
 
 def run_ch7(rr: Result<&1, &1, U32 & String, L.Mat>, rrb: Result<&1, &1, U32 & String, L.Mat>, rbp: Result<&1, &1, U32 & String, L.Mat>, rbc: Result<&1, &1, U32 & String, L.Mat>, rcfp: Result<&1, &1, U32 & String, L.Mat>, rcfc: Result<&1, &1, U32 & String, L.Mat>, rdp: Result<&1, &1, U32 & String, L.Vec>, rdc: Result<&1, &1, U32 & String, L.Vec>, ran: Result<&1, &1, U32 & String, L.Mat>, rgk: Result<&1, &1, U32 & String, L.Mat>, rgn: Result<&1, &1, U32 & String, L.Mat>, +t: U32, +n: U32, +k: U32, +kb: U32, +win: U32) -> String:
   match rr rrb rbp rbc rcfp rcfc rdp rdc ran rgk rgn:

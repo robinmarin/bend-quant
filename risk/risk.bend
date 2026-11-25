@@ -2411,7 +2411,7 @@ def impute_loadings_char(+b_known: L.Mat, +g_known: L.Mat, +g_new: L.Mat, +shrin
 
 # Strictly causal window extractor: builds rolling windows of length `window` ending at
 # t = window-1, window, ..., T-1. Window j contains ONLY rows [j .. j + window - 1].
-# Proved causal in PROOF.bend: windows 0..k depend only on rows 0..(k + window - 1)!
+# Proved causal in PROOF.bend: the first k windows depend only on the first k + window - 1 rows.
 def make_windows(-A: Data, rem: Nat, xs: List<&2, A>, +w: Nat) -> List<&2, List<&2, A>>:
   match rem xs:
     case 0n _:
@@ -2511,6 +2511,27 @@ def rolling_statistical_models(returns: L.Mat, +window: U32, cfg: StatConfig, +a
   L.Mat{+t, +n, rows} = returns
   +ok = Bool.and(U32.is_gt(window, 0), Bool.and(U32.is_ge(t, window), U32.is_gt(n, 0)))
   roll_stat.chk(ok, rows, t, n, window, cfg, align_mode)
+
+def oos_drop(n: Nat) -> Nat:
+  match n:
+    case 0n:
+      0n
+    case 1n+p:
+      p
+
+def oos_returns.chk(ok: Bool, +t: U32, +n: U32, rows: List<&2, List<&2, F32>>, +window: U32) -> Maybe<&2, L.Mat>:
+  match ok:
+    case True{}:
+      Some{L.Mat{((t - window) + 1 : U32), n, list_drop(List<&2, F32>, oos_drop(U32.to_nat(window)), rows)}}
+    case False{}:
+      None{}
+
+# The return rows that line up with rolling_statistical_models(returns, window, ...):
+# drops the first window - 1 rows, so qdist / mahalanobis_test / mvp_test pair
+# model j (fit on rows j .. j + window - 1) with row j + window. Proved in PROOF.bend.
+def oos_returns(returns: L.Mat, +window: U32) -> Maybe<&2, L.Mat>:
+  L.Mat{+t, +n, rows} = returns
+  oos_returns.chk(Bool.and(U32.is_gt(window, 0), U32.is_ge(t, window)), t, n, rows, window)
 
 # Rolling fundamental factor models: parallel pmap over strictly causal windows [j .. j + window - 1].
 type FundWin is Data:
