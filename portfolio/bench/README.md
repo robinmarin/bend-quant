@@ -45,6 +45,16 @@ Every case solves the full production constraint set simultaneously: position bo
 
 *(Pure C OSQP time is `res.info.run_time` = C setup + C solve with zero Python sparse-matrix construction overhead; e.g., at $1000 \times 30$ on EPYC, OSQP C setup is `13.40 ms` and C solve is `703.84 ms`.)*
 
+**Solution quality.** Both solvers stop at the same nominal tolerances (`1e-5` / `1e-4`), but they measure residuals on different formulations, so `run_bench.py` also scores both answers against a tight OSQP solve (`eps 1e-9`, polished). Measured on M1 Pro (8t):
+
+| Book size | objective gap, Bend | objective gap, OSQP | worst constraint violation, Bend | worst constraint violation, OSQP | max $\|w_{\text{Bend}} - w_{\text{OSQP}}\|$ |
+|---|---:|---:|---:|---:|---:|
+| $200 \times 15$ | `-4.3e-06` | `-5.2e-04` | `4.8e-05` | `3.7e-03` | `1.1e-03` |
+| $500 \times 30$ | `-9.0e-07` | `-3.4e-04` | `5.2e-05` | `3.1e-03` | `7.6e-04` |
+| $1000 \times 30$ | `-6.3e-07` | `-3.4e-04` | `2.5e-05` | `6.2e-03` | `1.3e-03` |
+
+Gaps are relative to the reference objective; they are negative because both answers sit slightly outside the feasible set. At these settings OSQP overshoots the `0.02` position bound by up to `0.006`. Bend's answer is the more accurate one, so the speedup doesn't come from Bend stopping earlier. Tightening OSQP to Bend's accuracy would make it slower still.
+
 ## Takeaways
 
 1. **Bend's Woodbury-ADMM beats pure C OSQP by 2.6×–7.5× on constrained factor-model MVO.**

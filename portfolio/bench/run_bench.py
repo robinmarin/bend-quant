@@ -62,7 +62,7 @@ def time_py(fn, reps=20):
     return (time.perf_counter() - t0) / reps * 1000.0
 
 
-def bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, rho, gmv, reps=5):
+def bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, rho, gmv, reps=5, tight=False):
     """Sparse factor-model OSQP formulation matching mvo_constrained exactly:
     Variables x = [w (N), f (K), t (N), g (N)]:
       min 0.5*rho*(w^T D w + f^T cov_f f) + 0.5*sum(c2*(w-w0)^2) - a^T w + c1^T t
@@ -88,7 +88,7 @@ def bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, rho, 
     c1 = c1a.astype(np.float64)
     c2 = c2a.astype(np.float64)
 
-    def build_and_solve():
+    def build_and_solve(**opts):
         P_w = sp.diags(rho * D + c2, format="csc")
         P_f = sp.csc_matrix(rho * Cf)
         P_z = sp.csc_matrix((2 * n, 2 * n))
@@ -138,17 +138,35 @@ def bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, rho, 
         ])
 
         prob = osqp.OSQP()
-        prob.setup(P, q, C, lb, ub, eps_abs=1e-5, eps_rel=1e-4, verbose=False, polish=False)
+        settings = dict(eps_abs=1e-5, eps_rel=1e-4, verbose=False, polish=False)
+        settings.update(opts)
+        prob.setup(P, q, C, lb, ub, **settings)
         res = prob.solve()
         return res
 
+    if tight:
+        res = build_and_solve(eps_abs=1e-9, eps_rel=1e-9, polish=True, max_iter=200000)
+        return res.x[:n]
     res = build_and_solve()
     t0 = time.perf_counter()
     for _ in range(reps):
         res = build_and_solve()
     ms = (time.perf_counter() - t0) / reps * 1000.0
     w = res.x[:n]
-    return ms, res.info.iter, float(np.sum(w))
+    return ms, res.info.iter, w
+
+
+def mvo_obj(b, cf, d, a, w0, c1, c2, rho, w):
+    w = np.asarray(w, dtype=np.float64)
+    f = b.astype(np.float64).T @ w
+    dw = w - w0
+    risk = w @ (d * w) + f @ cf.astype(np.float64) @ f
+    return float(0.5 * rho * risk - a @ w + 0.5 * np.sum(c2 * dw * dw) + np.sum(c1 * np.abs(dw)))
+
+
+def mvo_viol(A, lw, uw, lc, uc, gmv, w):
+    aw = A.astype(np.float64) @ w
+    return float(max(np.max(lw - w), np.max(w - uw), np.max(lc - aw), np.max(aw - uc), np.sum(np.abs(w)) - gmv, 0.0))
 
 
 def main():
@@ -282,8 +300,17 @@ def main():
             )
             label = f"mvo_constrained ({N_a}x{K_a}, M={Ma})"
             if HAS_OSQP and not args.skip_py:
-                o_ms, o_it, o_sum = bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, 2.0, 2.0, reps=reps_a)
-                print(f"{label:<38} | {b_ms:>12.2f} | {o_ms:>12.2f} | {info} | osqp_it={o_it} ratio={b_ms/o_ms:.2f}x")
+                o_ms, o_it, w_o = bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, 2.0, 2.0, reps=reps_a)
+                w_ref = bench_osqp_mvo(ba, cfa, da, aa, w0a, lwa, uwa, Aa, lca, uca, c1a, c2a, 2.0, 2.0, tight=True)
+                w_b = np.array([float(x) for x in info.split(" w=", 1)[1].split(",")])
+                obj = lambda w: mvo_obj(ba, cfa, da, aa, w0a, c1a, c2a, 2.0, w)
+                o_ref = obj(w_ref)
+                gap = lambda w: (obj(w) - o_ref) / abs(o_ref)
+                viol = lambda w: mvo_viol(Aa, lwa, uwa, lca, uca, 2.0, w)
+                head = info.split(" w=", 1)[0]
+                print(f"{label:<38} | {b_ms:>12.2f} | {o_ms:>12.2f} | {head} | osqp_it={o_it} ratio={b_ms/o_ms:.2f}x")
+                print(f"{'  vs tight OSQP reference':<38} | gap_bend={gap(w_b):.1e} gap_osqp={gap(w_o):.1e} "
+                      f"viol_bend={viol(w_b):.1e} viol_osqp={viol(w_o):.1e} max|w_bend-w_osqp|={np.max(np.abs(w_b - w_o)):.1e}")
             else:
                 print(f"{label:<38} | {b_ms:>12.2f} | {'—':>12} | {info}")
 

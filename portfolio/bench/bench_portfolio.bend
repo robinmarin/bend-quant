@@ -51,10 +51,19 @@ def risk_chk(mr: Maybe<&2, P.RiskDecomp>) -> F32:
     case None{}:
       0.0
 
+def show_csv(xs: List<&2, F32>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case Con{h, Nil{}}:
+      F32.show(h)
+    case Con{h, t}:
+      F32.show(h) ++ "," ++ show_csv(t)
+
 def opt_chk(mo: Maybe<&2, P.OptResult>) -> String:
   match mo:
-    case Some{P.OptResult{L.Vec{_, xs}, it, rp, rd, _}}:
-      "iters=" ++ U32.show(it) ++ " rp=" ++ F32.show(rp) ++ " rd=" ++ F32.show(rd) ++ " sum=" ++ F32.show(sum_list(xs, 0.0))
+    case Some{P.OptResult{L.Vec{_, +xs}, it, rp, rd, _}}:
+      "iters=" ++ U32.show(it) ++ " rp=" ++ F32.show(rp) ++ " rd=" ++ F32.show(rd) ++ " sum=" ++ F32.show(sum_list(xs, 0.0)) ++ " w=" ++ show_csv(xs)
     case None{}:
       "none"
 
