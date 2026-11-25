@@ -687,7 +687,7 @@ def Laws.make_windows_get(A, rem, xs, w, i, h, hlen):
     case 1n+p Con{x, t} 1n+q:
       Laws.make_windows_get(A, p, t, w, q, h, hlen)
 
-def Laws.make_windows_causal(A, k, rem, xs, w):
+def Laws.make_windows_causal(A, k, rem, xs, v):
   match k rem xs:
     case 0n _ _:
       {==}
@@ -698,10 +698,26 @@ def Laws.make_windows_causal(A, k, rem, xs, w):
     case 1n+kp 1n+rp Nil{}:
       {==}
     case 1n+(+kp) 1n+(+rp) Con{+x, +t}:
-      +h1 = take_take_add(A, 1n+kp, w, x <> t)
-      %Equal.sym(List<&2, A>, R.list_take(A, w, x <> R.list_take(A, Nat.add(kp, w), t)), R.list_take(A, w, x <> t), h1) : {R.list_take(A, w, x <> t) <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, t, w)) == _ <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, R.list_take(A, Nat.add(kp, w), t), w)) : List<&2, List<&2, A>>}
-      %Laws.make_windows_causal(A, kp, rp, t, w) : {R.list_take(A, w, x <> t) <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, t, w)) == R.list_take(A, w, x <> t) <> _ : List<&2, List<&2, A>>}
+      +h1 = take_take_add(A, kp, v, t)
+      %Equal.sym(List<&2, A>, R.list_take(A, v, R.list_take(A, Nat.add(kp, v), t)), R.list_take(A, v, t), h1) : {(x <> R.list_take(A, v, t)) <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, t, 1n+v)) == (x <> _) <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, R.list_take(A, Nat.add(kp, v), t), 1n+v)) : List<&2, List<&2, A>>}
+      %Laws.make_windows_causal(A, kp, rp, t, v) : {(x <> R.list_take(A, v, t)) <> R.list_take(List<&2, A>, kp, R.make_windows(A, rp, t, 1n+v)) == (x <> R.list_take(A, v, t)) <> _ : List<&2, List<&2, A>>}
       {==}
+
+def drop_get(-A: Data, k: Nat, xs: List<&2, A>, +i: Nat) -> {List.get(&2, A, R.list_drop(A, k, xs), i) == List.get(&2, A, xs, Nat.add(i, k)) : Maybe<&2, A>}:
+  match k xs:
+    case 0n _:
+      %Equal.sym(Nat, Nat.add(i, 0n), i, add_zero_r(i)) : {List.get(&2, A, xs, i) == List.get(&2, A, xs, _) : Maybe<&2, A>}
+      {==}
+    case 1n+(+p) Nil{}:
+      {==}
+    case 1n+(+p) Con{h, t}:
+      %Equal.sym(Nat, Nat.add(i, 1n+p), 1n+Nat.add(i, p), add_succ_r(i, p)) : {List.get(&2, A, R.list_drop(A, p, t), i) == List.get(&2, A, h <> t, _) : Maybe<&2, A>}
+      drop_get(A, p, t, i)
+
+def Laws.oos_returns_row(t, n, rows, window, v, j, hw, ok):
+  %Equal.sym(Bool, Bool.and(U32.is_gt(window, 0), U32.is_ge(t, window)), True{}, ok) : {Laws.mm_row(R.oos_returns.chk(_, t, n, rows, window), 1n+j) == List.get(&2, List<&2, F32>, rows, Nat.add(1n+j, v)) : Maybe<&2, List<&2, F32>>}
+  %Equal.sym(Nat, U32.to_nat(window), 1n+v, hw) : {List.get(&2, List<&2, F32>, R.list_drop(List<&2, F32>, R.oos_drop(_), rows), 1n+j) == List.get(&2, List<&2, F32>, rows, Nat.add(1n+j, v)) : Maybe<&2, List<&2, F32>>}
+  drop_get(List<&2, F32>, v, rows, 1n+j)
 
 # ---------------------------------------------------------------- 3. No-Lookahead Evaluation Proofs
 
@@ -936,4 +952,35 @@ def Laws.impute_ts_mismatch(ta, ma, arows, tf, kf, frows, h):
 
 def Laws.rolling_stat_zero_window(r, cfg, am):
   L.Mat{+t, +n, rows} = r
+  {==}
+
+# ---------------------------------------------------------------- Public evaluators run over the OOS pairs
+
+def Laws.qdist_pairs(fms, t, n, r0, rs, h):
+  +pairs = R.pair_oos_fm(fms, rs)
+  +rhs = R.qdist.fin(R.seq_maybe(F32, R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.qdist_period, pairs, n)), (t - 1 : U32))
+  %Equal.sym(Bool, Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0))), True{}, h) : {R.qdist.chk(_, fms, r0 <> rs, t, n) == rhs : Maybe<&2, R.QDistResult>}
+  %Equal.sym(List<&2, Maybe<&2, F32>>, R.pmap(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.qdist_period, pairs, (t - 1 : U32), n), R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.qdist_period, pairs, n), Laws.pmap_seq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.qdist_period, pairs, (t - 1 : U32), n)) : {R.qdist.fin(R.seq_maybe(F32, _), (t - 1 : U32)) == rhs : Maybe<&2, R.QDistResult>}
+  {==}
+
+def Laws.mahalanobis_pairs(fms, t, n, r0, rs, h):
+  +pairs = R.pair_oos_fm(fms, rs)
+  +rhs = R.mahal.fin(R.seq_maybe(F32, R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.mahal_period, pairs, n)), (t - 1 : U32))
+  %Equal.sym(Bool, Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0))), True{}, h) : {R.mahal.chk(_, fms, r0 <> rs, t, n) == rhs : Maybe<&2, R.MahalanobisResult>}
+  %Equal.sym(List<&2, Maybe<&2, F32>>, R.pmap(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.mahal_period, pairs, (t - 1 : U32), n), R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.mahal_period, pairs, n), Laws.pmap_seq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.mahal_period, pairs, (t - 1 : U32), n)) : {R.mahal.fin(R.seq_maybe(F32, _), (t - 1 : U32)) == rhs : Maybe<&2, R.MahalanobisResult>}
+  {==}
+
+def Laws.mvp_pairs(fms, t, n, r0, rs, nb, bs, h):
+  +pairs = R.pair_oos_fm(fms, rs)
+  +bv = {L.Vec{nb, bs} : L.Vec}
+  +rhs = R.mvp.fin(R.seq_maybe(R.MvpStep, R.pseq(~R.FmRetPair, ~Maybe<&2, R.MvpStep>, ~L.Vec, ~R.mvp_period, pairs, bv)), (t - 1 : U32))
+  %Equal.sym(Bool, Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_eq(n, nb), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0)))), True{}, h) : {R.mvp.chk(_, fms, r0 <> rs, bv, t) == rhs : Maybe<&2, R.MvpResult>}
+  %Equal.sym(List<&2, Maybe<&2, R.MvpStep>>, R.pmap(~R.FmRetPair, ~Maybe<&2, R.MvpStep>, ~L.Vec, ~R.mvp_period, pairs, (t - 1 : U32), bv), R.pseq(~R.FmRetPair, ~Maybe<&2, R.MvpStep>, ~L.Vec, ~R.mvp_period, pairs, bv), Laws.pmap_seq(~R.FmRetPair, ~Maybe<&2, R.MvpStep>, ~L.Vec, ~R.mvp_period, pairs, (t - 1 : U32), bv)) : {R.mvp.fin(R.seq_maybe(R.MvpStep, _), (t - 1 : U32)) == rhs : Maybe<&2, R.MvpResult>}
+  {==}
+
+def Laws.portfolio_vol_pairs(fms, tw, nw, wrows, tr, nr, r0, rs, h):
+  +items = R.pair_oos_fmw(fms, wrows, rs)
+  +rhs = R.pvol.fin(R.seq_maybe(R.MvpStep, R.pseq(~R.FmWRet, ~Maybe<&2, R.MvpStep>, ~U32, ~R.pvol_period, items, nr)), (tr - 1 : U32))
+  %Equal.sym(Bool, Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), tw), Bool.and(U32.is_eq(tw, tr), Bool.and(U32.is_eq(nw, nr), Bool.and(U32.is_gt(tr, 1), U32.is_gt(nr, 0))))), True{}, h) : {R.pvol.chk(_, fms, wrows, r0 <> rs, tr, nr) == rhs : Maybe<&2, R.VolEval>}
+  %Equal.sym(List<&2, Maybe<&2, R.MvpStep>>, R.pmap(~R.FmWRet, ~Maybe<&2, R.MvpStep>, ~U32, ~R.pvol_period, items, (tr - 1 : U32), nr), R.pseq(~R.FmWRet, ~Maybe<&2, R.MvpStep>, ~U32, ~R.pvol_period, items, nr), Laws.pmap_seq(~R.FmWRet, ~Maybe<&2, R.MvpStep>, ~U32, ~R.pvol_period, items, (tr - 1 : U32), nr)) : {R.pvol.fin(R.seq_maybe(R.MvpStep, _), (tr - 1 : U32)) == rhs : Maybe<&2, R.VolEval>}
   {==}

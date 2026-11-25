@@ -62,7 +62,7 @@ def mm_take_rows(k: Nat, mm: Maybe<&2, L.Mat>) -> Maybe<&2, List<&2, List<&2, F3
     case Some{L.Mat{_, _, rows}}:
       Some{R.list_take(List<&2, F32>, k, rows)}
 
-# ---------------------------------------------------------------- 1. Exact Structural Symmetry (11 laws)
+# ---------------------------------------------------------------- 1. Exact Structural Symmetry (11 laws + 1 guard)
 
 law mirror_upper_sym:
   for up: List<&2, List<&2, F32>>
@@ -153,7 +153,7 @@ law link_models_ir_sym:
   for +j: Nat
   {mm_get(R.link_models_ir(locs, joint, rho), i, j) == mm_get(R.link_models_ir(locs, joint, rho), j, i) : Maybe<&2, F32>}
 
-# ---------------------------------------------------------------- 2. Strict Causality (4 laws)
+# ---------------------------------------------------------------- 2. Strict Causality (4 laws, plus oos_returns_row)
 
 law scan_causal:
   for ~A: Data
@@ -186,15 +186,37 @@ law make_windows_get:
   for hlen: {Nat.is_lt(i, List.length(&2, A, xs)) == True{} : Bool}
   {List.get(&2, List<&2, A>, R.make_windows(A, rem, xs, w), i) == Some{R.list_take(A, w, R.list_drop(A, i, xs))} : Maybe<&2, List<&2, A>>}
 
+# The first k windows of size 1 + v depend only on the first k + v rows.
 law make_windows_causal:
   for -A: Data
   for +k: Nat
   for +rem: Nat
   for +xs: List<&2, A>
-  for +w: Nat
-  {R.list_take(List<&2, A>, k, R.make_windows(A, rem, xs, w)) == R.list_take(List<&2, A>, k, R.make_windows(A, rem, R.list_take(A, Nat.add(k, w), xs), w)) : List<&2, List<&2, A>>}
+  for +v: Nat
+  {R.list_take(List<&2, A>, k, R.make_windows(A, rem, xs, 1n+v)) == R.list_take(List<&2, A>, k, R.make_windows(A, rem, R.list_take(A, Nat.add(k, v), xs), 1n+v)) : List<&2, List<&2, A>>}
 
-# ---------------------------------------------------------------- 3. No-Lookahead Out-of-Sample Evaluation (Ch 5, 4 laws)
+def mm_row(mm: Maybe<&2, L.Mat>, i: Nat) -> Maybe<&2, List<&2, F32>>:
+  match mm:
+    case None{}:
+      None{}
+    case Some{L.Mat{_, _, rows}}:
+      List.get(&2, List<&2, F32>, rows, i)
+
+# Rolling models to evaluation. With window = 1 + v, make_windows_get says model j
+# is fit on rows j .. j + v. Row 1 + j of oos_returns(R, window) is row j + v + 1
+# of R, and qdist_pairs / pair_oos_fm_row score model j on exactly that row.
+law oos_returns_row:
+  for +t: U32
+  for +n: U32
+  for +rows: List<&2, List<&2, F32>>
+  for +window: U32
+  for +v: Nat
+  for +j: Nat
+  for hw: {U32.to_nat(window) == 1n+v : Nat}
+  for ok: {Bool.and(U32.is_gt(window, 0), U32.is_ge(t, window)) == True{} : Bool}
+  {mm_row(R.oos_returns(L.Mat{t, n, rows}, window), 1n+j) == List.get(&2, List<&2, F32>, rows, Nat.add(1n+j, v)) : Maybe<&2, List<&2, F32>>}
+
+# ---------------------------------------------------------------- 3. No-Lookahead Out-of-Sample Evaluation (Ch 5, 6 laws + 2 guards)
 
 law pair_oos_fm_row:
   for +fms: List<&2, P.FactorModel>
@@ -210,6 +232,49 @@ law pair_oos_fmw_row:
   for +rs: List<&2, List<&2, F32>>
   for +i: Nat
   {List.get(&2, R.FmWRet, R.pair_oos_fmw(fms, ws, rs), i) == maybe_pair_fmw(List.get(&2, P.FactorModel, fms, i), List.get(&2, List<&2, F32>, ws, i), List.get(&2, List<&2, F32>, r0 <> rs, 1n+i)) : Maybe<&2, R.FmWRet>}
+
+# The public evaluators run their per-period metric over exactly pair_oos_fm /
+# pair_oos_fmw, so with pair_oos_fm_row: period i scores model i on row i + 1.
+law qdist_pairs:
+  for +fms: List<&2, P.FactorModel>
+  for +t: U32
+  for +n: U32
+  for +r0: List<&2, F32>
+  for +rs: List<&2, List<&2, F32>>
+  for h: {Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0))) == True{} : Bool}
+  {R.qdist(fms, L.Mat{t, n, r0 <> rs}) == R.qdist.fin(R.seq_maybe(F32, R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.qdist_period, R.pair_oos_fm(fms, rs), n)), (t - 1 : U32)) : Maybe<&2, R.QDistResult>}
+
+law mahalanobis_pairs:
+  for +fms: List<&2, P.FactorModel>
+  for +t: U32
+  for +n: U32
+  for +r0: List<&2, F32>
+  for +rs: List<&2, List<&2, F32>>
+  for h: {Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0))) == True{} : Bool}
+  {R.mahalanobis_test(fms, L.Mat{t, n, r0 <> rs}) == R.mahal.fin(R.seq_maybe(F32, R.pseq(~R.FmRetPair, ~Maybe<&2, F32>, ~U32, ~R.mahal_period, R.pair_oos_fm(fms, rs), n)), (t - 1 : U32)) : Maybe<&2, R.MahalanobisResult>}
+
+law mvp_pairs:
+  for +fms: List<&2, P.FactorModel>
+  for +t: U32
+  for +n: U32
+  for +r0: List<&2, F32>
+  for +rs: List<&2, List<&2, F32>>
+  for +nb: U32
+  for +bs: List<&2, F32>
+  for h: {Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), t), Bool.and(U32.is_eq(n, nb), Bool.and(U32.is_gt(t, 1), U32.is_gt(n, 0)))) == True{} : Bool}
+  {R.mvp_test(fms, L.Mat{t, n, r0 <> rs}, L.Vec{nb, bs}) == R.mvp.fin(R.seq_maybe(R.MvpStep, R.pseq(~R.FmRetPair, ~Maybe<&2, R.MvpStep>, ~L.Vec, ~R.mvp_period, R.pair_oos_fm(fms, rs), L.Vec{nb, bs})), (t - 1 : U32)) : Maybe<&2, R.MvpResult>}
+
+law portfolio_vol_pairs:
+  for +fms: List<&2, P.FactorModel>
+  for +tw: U32
+  for +nw: U32
+  for +wrows: List<&2, List<&2, F32>>
+  for +tr: U32
+  for +nr: U32
+  for +r0: List<&2, F32>
+  for +rs: List<&2, List<&2, F32>>
+  for h: {Bool.and(U32.is_eq(U32.from_nat(List.length(&2, P.FactorModel, fms)), tw), Bool.and(U32.is_eq(tw, tr), Bool.and(U32.is_eq(nw, nr), Bool.and(U32.is_gt(tr, 1), U32.is_gt(nr, 0))))) == True{} : Bool}
+  {R.portfolio_vol_eval(fms, L.Mat{tw, nw, wrows}, L.Mat{tr, nr, r0 <> rs}) == R.pvol.fin(R.seq_maybe(R.MvpStep, R.pseq(~R.FmWRet, ~Maybe<&2, R.MvpStep>, ~U32, ~R.pvol_period, R.pair_oos_fmw(fms, wrows, rs), nr)), (tr - 1 : U32)) : Maybe<&2, R.VolEval>}
 
 law qdist_mismatch:
   for +fms: List<&2, P.FactorModel>

@@ -944,6 +944,8 @@ def test_ch7():
         g_imp_ch = par.read_mat()
         g_roll_s = par.read_fms()
         g_roll_p = par.read_fms()
+        g_roll_0 = par.read_fms()
+        g_oos_qd = par.read_qdist()
 
     R64 = rets.astype(np.float64)
     Rb64 = rets_big.astype(np.float64)
@@ -1008,6 +1010,15 @@ def test_ch7():
     Q_sub, _ = np.linalg.qr(g_big_sub["loadings"], mode="reduced")
     sub_vs_ex_dist = float(np.sqrt(max(0.0, 1.0 - np.linalg.norm(Q_ex.T @ Q_sub, "fro")**2 / kb)))
 
+    # Rolling -> evaluation: model j (fit on rows j .. j+win-1) must be scored on row j+win.
+    R_oos = rets.astype(np.float64)
+    ref_oos_qd = []
+    for j in range(t - win):
+        Om = fm_cov(g_roll_0[j])
+        rn = R_oos[j + win]
+        ref_oos_qd.append(np.linalg.slogdet(Om)[1] + float(rn @ np.linalg.solve(Om, rn)) + n * np.log(2.0 * np.pi))
+    ref_oos_qd = np.array(ref_oos_qd)
+
     # Verify rolling alignment: consecutive Procrustes-aligned models have small ||B_{t-1} - B_t||
     roll_sym = max(float(np.max(np.abs(m["cov_f"] - m["cov_f"].T))) for m in g_roll_p)
 
@@ -1052,6 +1063,7 @@ def test_ch7():
         "rolling_sign_len": abs(len(g_roll_s) - (t - win + 1)),
         "rolling_proc_len": abs(len(g_roll_p) - (t - win + 1)),
         "rolling_proc_sym": roll_sym,
+        "rolling_oos_qdist": rel_err(g_oos_qd["per_period"], ref_oos_qd),
     }
     print(f"       select_k: threshold={g_k_thr}, gap_lin={g_k_glin}, gap_log={g_k_glog}, bai_ng_ic={g_baing['k_ic']}, bai_ng_pc={g_baing['k_pc']} (true K={k})")
     report("ch7_statistical_pca_rmt_alignment", errs, tol=5e-4)
