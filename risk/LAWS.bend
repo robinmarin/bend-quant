@@ -4,8 +4,8 @@
 # no-lookahead out-of-sample pairing, parallel-sequential equivalence, and
 # dimension/parameter guards for every input.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import ./cov.bend as C
 import ./risk.bend as R
 

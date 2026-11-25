@@ -3,8 +3,8 @@
 #
 # Public: Returns.load, LoadingsSeries.load.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
 
 # Loads a T x N return panel from a row-major little-endian float32 file.
 def Returns.load(path: String, +t: U32, +n: U32) -> IO(Result<&1, &1, U32 & String, L.Mat>):

@@ -2,9 +2,9 @@
 # Invoked by check.py to cross-check every public function against
 # NumPy, SciPy, scikit-learn, and statsmodels.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import ./risk.bend as R
 import ./io.bend as RI
 

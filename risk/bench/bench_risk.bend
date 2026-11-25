@@ -2,9 +2,9 @@
 # Driven by bench/run_bench.py to measure end-to-end timings (including Data <-> Array boundaries)
 # across 1 thread and 8 threads (+RTS --threads N -RTS).
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import ../risk.bend as R
 import ../io.bend as RI
 

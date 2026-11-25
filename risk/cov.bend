@@ -6,7 +6,7 @@
 # through mirror_upper, enabling formal bitwise symmetry proofs in PROOF.bend.
 import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
 
 # ---------------------------------------------------------------- types
 

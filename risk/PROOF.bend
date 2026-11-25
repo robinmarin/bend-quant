@@ -1,8 +1,8 @@
 # Proofs of every law in LAWS.bend (41 laws total).
 # Checked with `bend PROOF.bend --verdict` (zero @unsafe, zero IO).
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import ./cov.bend as C
 import ./risk.bend as R
 import ./LAWS.bend as Laws
