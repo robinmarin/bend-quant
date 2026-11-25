@@ -1,6 +1,7 @@
 import Base
 import ./LAWS.bend as Laws
 import ./linalg.bend as L
+import bend-mathlib@0.1.0.0/list.bend as MList
 
 # ---------------------------------------------------------------- from_rows
 
@@ -14,6 +15,15 @@ def Laws.from_rows_ragged_last():
   {==}
 
 def Laws.from_rows_empty():
+  {==}
+
+def Laws.mat_ok_rect():
+  {==}
+
+def Laws.mat_ok_wrong_m():
+  {==}
+
+def Laws.mat_ok_ragged():
   {==}
 
 # ---------------------------------------------------------------- basic helpers
@@ -285,7 +295,33 @@ def Laws.transpose_involutive(rows, n, h):
       %Laws.transpose_involutive(rs, n, hrs) : {r <> L.transpose.rows(L.transpose.rows(rs, n), List.length(&2, List<&2, F32>, rs)) == r <> _ : List<&2, List<&2, F32>>}
       {==}
 
+def rows_ok_eq(+rows: List<&2, List<&2, F32>>, +a: Nat, +b: Nat, e: {a == b : Nat}, h: {L.Mat.rows.ok(rows, a) == True{} : Bool}) -> {L.Mat.rows.ok(rows, b) == True{} : Bool}:
+  %e : {L.Mat.rows.ok(rows, _) == True{} : Bool}
+  h
+
+# Mat.ok from its two halves.
+def mat_ok_intro(+m: U32, +n: U32, +rows: List<&2, List<&2, F32>>, hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}, +hr: {L.Mat.rows.ok(rows, U32.to_nat(n)) == True{} : Bool}) -> {L.Mat.ok(L.Mat{m, n, rows}) == True{} : Bool}:
+  %Equal.sym(Nat, List.length(&2, List<&2, F32>, rows), U32.to_nat(m), hl) : {Bool.and(Nat.is_eq(_, U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n))) == True{} : Bool}
+  %Equal.sym(Bool, Nat.is_eq(U32.to_nat(m), U32.to_nat(m)), True{}, nat_eq_refl(U32.to_nat(m))) : {Bool.and(_, L.Mat.rows.ok(rows, U32.to_nat(n))) == True{} : Bool}
+  hr
+
+def Laws.transpose_ok(a, h):
+  match a:
+    case L.Mat{+m, +n, +rows}:
+      +nn = U32.to_nat(n)
+      +hl = nat_eq_sound(List.length(&2, List<&2, F32>, rows), U32.to_nat(m), bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, nn), h))
+      +hr = bool_and_r(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, nn), h)
+      mat_ok_intro(n, m, L.transpose.rows(rows, nn), Laws.transpose_len(rows, nn, hr), rows_ok_eq(L.transpose.rows(rows, nn), List.length(&2, List<&2, F32>, rows), U32.to_nat(m), hl, Laws.transpose_row_len(rows, nn, hr)))
+
 # ---------------------------------------------------------------- products
+
+def pseq_len(~A: Data, ~B: Data, ~C: Data, ~f: C -> A -> B, xs: List<&2, A>, +c: C) -> {List.length(&2, B, L.pseq(~A, ~B, ~C, ~f, xs, c)) == List.length(&2, A, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %pseq_len(~A, ~B, ~C, ~f, t, c) : {1n+List.length(&2, B, L.pseq(~A, ~B, ~C, ~f, t, c)) == 1n+_ : Nat}
+      {==}
 
 def Laws.matvec_entry(ma, na, nx, ra, xs, i, e):
   %Equal.sym(Bool, U32.is_eq(na, nx), True{}, e) : {Laws.mv_get(L.matvec.chk(_, ma, ra, xs), i) == Laws.fmap(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, xs, List.get(&2, List<&2, F32>, ra, i)) : Maybe<&2, F32>}
@@ -314,6 +350,42 @@ def Laws.matmul_entry(ma, na, mb, nb, ra, rb, i, j, e):
   %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols), L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)) : {L.mat_get(_, i, j) == Laws.opt_dot(List.get(&2, List<&2, F32>, ra, i), List.get(&2, List<&2, F32>, bcols, j)) : Maybe<&2, F32>}
   %Equal.sym(Maybe<&2, List<&2, F32>>, List.get(&2, List<&2, F32>, L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), i), Laws.fmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, bcols, List.get(&2, List<&2, F32>, ra, i)), Laws.pseq_get(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols, i)) : {L.row_get(_, j) == Laws.opt_dot(List.get(&2, List<&2, F32>, ra, i), List.get(&2, List<&2, F32>, bcols, j)) : Maybe<&2, F32>}
   row_get_fmap(List.get(&2, List<&2, F32>, ra, i), bcols, j)
+
+def Laws.matvec_ok(ma, na, nx, ra, xs, e, ha):
+  %Equal.sym(Bool, U32.is_eq(na, nx), True{}, e) : {Laws.mv_ok(L.matvec.chk(_, ma, ra, xs)) == True{} : Bool}
+  %Equal.sym(List<&2, F32>, L.pmap(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, ma, xs), L.pseq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs), Laws.pmap_seq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, ma, xs)) : {L.Vec.ok(L.Vec{ma, _}) == True{} : Bool}
+  %Equal.sym(Nat, List.length(&2, F32, L.pseq(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs)), List.length(&2, List<&2, F32>, ra), pseq_len(~List<&2, F32>, ~F32, ~List<&2, F32>, ~L.matvec.row, ra, xs)) : {Nat.is_eq(_, U32.to_nat(ma)) == True{} : Bool}
+  bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma)), L.Mat.rows.ok(ra, U32.to_nat(na)), ha)
+
+def matmul_dots_len(+r: List<&2, F32>, cols: List<&2, List<&2, F32>>) -> {List.length(&2, F32, L.matmul.dots(r, cols)) == List.length(&2, List<&2, F32>, cols) : Nat}:
+  match cols:
+    case Nil{}:
+      {==}
+    case Con{c, ct}:
+      %matmul_dots_len(r, ct) : {1n+List.length(&2, F32, L.matmul.dots(r, ct)) == 1n+_ : Nat}
+      {==}
+
+# Every row of matmul's row loop has one entry per column of B.
+def mm_rows_ok(ra: List<&2, List<&2, F32>>, +bcols: List<&2, List<&2, F32>>, +n: Nat, +h: {List.length(&2, List<&2, F32>, bcols) == n : Nat}) -> {L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), n) == True{} : Bool}:
+  match ra:
+    case Nil{}:
+      {==}
+    case Con{+r, t}:
+      +hl = Equal.trans(Nat, List.length(&2, F32, L.matmul.dots(r, bcols)), List.length(&2, List<&2, F32>, bcols), n, matmul_dots_len(r, bcols), h)
+      %Equal.sym(Nat, List.length(&2, F32, L.matmul.dots(r, bcols)), n, hl) : {Bool.and(Nat.is_eq(_, n), L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, t, bcols), n)) == True{} : Bool}
+      %Equal.sym(Bool, Nat.is_eq(n, n), True{}, nat_eq_refl(n)) : {Bool.and(_, L.Mat.rows.ok(L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, t, bcols), n)) == True{} : Bool}
+      mm_rows_ok(t, bcols, n, h)
+
+def Laws.matmul_ok(ma, na, mb, nb, ra, rb, e, ha, hb):
+  +nn = U32.to_nat(nb)
+  +bcols = L.transpose.rows(rb, nn)
+  +rows = L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols)
+  %Equal.sym(Bool, U32.is_eq(na, mb), True{}, e) : {Laws.mm_ok(L.matmul.chk(_, ma, nb, ra, rb)) == True{} : Bool}
+  %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols), rows, Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)) : {L.Mat.ok(L.Mat{ma, nb, _}) == True{} : Bool}
+  +hra = nat_eq_sound(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma), bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, ra), U32.to_nat(ma)), L.Mat.rows.ok(ra, U32.to_nat(na)), ha))
+  +hrb = bool_and_r(Nat.is_eq(List.length(&2, List<&2, F32>, rb), U32.to_nat(mb)), L.Mat.rows.ok(rb, nn), hb)
+  +hl = Equal.trans(Nat, List.length(&2, List<&2, F32>, rows), List.length(&2, List<&2, F32>, ra), U32.to_nat(ma), pseq_len(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), hra)
+  mat_ok_intro(ma, nb, rows, hl, mm_rows_ok(ra, bcols, nn, Laws.transpose_len(rb, nn, hrb)))
 
 def Laws.matmul_mismatch(ma, na, mb, nb, ra, rb, e):
   %Equal.sym(Bool, U32.is_eq(na, mb), False{}, e) : {L.matmul.chk(_, ma, nb, ra, rb) == None{} : Maybe<&2, L.Mat>}
@@ -372,14 +444,6 @@ def Laws.mirror_upper_sym(up, n, i, j, h):
           %Equal.sym(Maybe<&2, F32>, L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), r, 1n+q), L.mat_get(L.mirror_upper(sub), r, q), zip_cons_get_succ(rest, L.mirror_upper(sub), r, q, eq)) : {_ == L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), q, 1n+r) : Maybe<&2, F32>}
           %Equal.sym(Maybe<&2, F32>, L.mat_get(L.zip_cons(rest, L.mirror_upper(sub)), q, 1n+r), L.mat_get(L.mirror_upper(sub), q, r), zip_cons_get_succ(rest, L.mirror_upper(sub), q, r, eq)) : {L.mat_get(L.mirror_upper(sub), r, q) == _ : Maybe<&2, F32>}
           Laws.mirror_upper_sym(sub, p, r, q, h2)
-
-def matmul_dots_len(+r: List<&2, F32>, cols: List<&2, List<&2, F32>>) -> {List.length(&2, F32, L.matmul.dots(r, cols)) == List.length(&2, List<&2, F32>, cols) : Nat}:
-  match cols:
-    case Nil{}:
-      {==}
-    case Con{c, ct}:
-      %matmul_dots_len(r, ct) : {1n+List.length(&2, F32, L.matmul.dots(r, ct)) == 1n+_ : Nat}
-      {==}
 
 # ---------------------------------------------------------------- Cholesky & solves
 
@@ -1307,18 +1371,472 @@ def Laws.procrustes_mismatch(ma, na, mb, nb, arows, brows, e):
   %Equal.sym(Bool, Bool.and(U32.is_eq(ma, mb), U32.is_eq(na, nb)), False{}, e) : {L.procrustes.chk(_, L.Mat{ma, na, arows}, L.Mat{mb, nb, brows}) == None{} : Maybe<&2, L.Mat>}
   {==}
 
-def pinv_from_svd_m(sv: L.SVD, +m: U32, +n: U32, +tol: F32) -> {Laws.mat_m(L.pinv.from_svd(sv, m, n, tol)) == n : U32}:
-  match sv:
-    case L.SVD{L.Mat{_, _, _}, L.Vec{_, _}, L.Mat{_, _, _}}:
+# ---------------------------------------------------------------- U32 equality soundness
+
+def bool_cmp_eq(a: Bool, b: Bool, h: {Cmp.is_eq(Bool.cmp(a, b)) == True{} : Bool}) -> {a == b : Bool}:
+  match a b:
+    case False{} False{}:
+      {==}
+    case False{} True{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+    case True{} False{}:
+      Empty.absurd({True{} == False{} : Bool}, false_ne_true(h))
+    case True{} True{}:
       {==}
 
-def pinv_from_svd_n(sv: L.SVD, +m: U32, +n: U32, +tol: F32) -> {Laws.mat_n(L.pinv.from_svd(sv, m, n, tol)) == m : U32}:
-  match sv:
-    case L.SVD{L.Mat{_, _, _}, L.Vec{_, _}, L.Mat{_, _, _}}:
+def cmp_fin_t(+ab: Bool, +bb: Bool, t: Cmp, h: {Cmp.is_eq(Word.cmp.fin(ab, bb, t)) == True{} : Bool}) -> {Cmp.is_eq(t) == True{} : Bool}:
+  match t:
+    case LT{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+    case EQ{}:
+      {==}
+    case GT{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+
+def cmp_fin_b(ab: Bool, bb: Bool, t: Cmp, h: {Cmp.is_eq(Word.cmp.fin(ab, bb, t)) == True{} : Bool}) -> {ab == bb : Bool}:
+  match t:
+    case LT{}:
+      Empty.absurd({ab == bb : Bool}, false_ne_true(h))
+    case EQ{}:
+      bool_cmp_eq(ab, bb, h)
+    case GT{}:
+      Empty.absurd({ab == bb : Bool}, false_ne_true(h))
+
+def word_eq_sound(n: Nat, a: Word(n), b: Word(n), +h: {Cmp.is_eq(Word.cmp(n, a, b)) == True{} : Bool}) -> {a == b : Word(n)}:
+  match n:
+    case 0n:
+      match a b:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+(+p):
+      match a b:
+        case WCon{+ab, +at} WCon{+bb, +bt}:
+          +e1 = cmp_fin_b(ab, bb, Word.cmp(p, at, bt), h)
+          +e2 = word_eq_sound(p, at, bt, cmp_fin_t(ab, bb, Word.cmp(p, at, bt), h))
+          %e1 : {WCon{ab, at} == WCon{_, bt} : Word(1n+p)}
+          %e2 : {WCon{ab, at} == WCon{ab, _} : Word(1n+p)}
+          {==}
+
+def u32_eq_nat(a: U32, b: U32, h: {U32.is_eq(a, b) == True{} : Bool}) -> {U32.to_nat(a) == U32.to_nat(b) : Nat}:
+  match a b:
+    case U32{+x} U32{+y}:
+      %word_eq_sound(32n, x, y, h) : {Word.to_nat(32n, x) == Word.to_nat(32n, _) : Nat}
       {==}
 
-def Laws.pinv_m(m, n, rows, tol):
-  pinv_from_svd_m(L.svd_thin(L.Mat{m, n, rows}), m, n, tol)
 
-def Laws.pinv_n(m, n, rows, tol):
-  pinv_from_svd_n(L.svd_thin(L.Mat{m, n, rows}), m, n, tol)
+# ---------------------------------------------------------------- Bool conjunction helpers
+
+def eq_true(+a: Nat, +b: Nat, e: {a == b : Nat}) -> {Nat.is_eq(a, b) == True{} : Bool}:
+  %Equal.sym(Nat, a, b, e) : {Nat.is_eq(_, b) == True{} : Bool}
+  nat_eq_refl(b)
+
+def and2(+a: Bool, +b: Bool, ha: {a == True{} : Bool}, hb: {b == True{} : Bool}) -> {Bool.and(a, b) == True{} : Bool}:
+  %Equal.sym(Bool, a, True{}, ha) : {Bool.and(_, b) == True{} : Bool}
+  hb
+
+def and9(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h1: {c1 == True{} : Bool}, h2: {c2 == True{} : Bool}, h3: {c3 == True{} : Bool}, h4: {c4 == True{} : Bool}, h5: {c5 == True{} : Bool}, h6: {c6 == True{} : Bool}, h7: {c7 == True{} : Bool}, h8: {c8 == True{} : Bool}, h9: {c9 == True{} : Bool}) -> {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}:
+  %Equal.sym(Bool, c1, True{}, h1) : {Bool.and(_, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}
+  %Equal.sym(Bool, c2, True{}, h2) : {Bool.and(_, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))) == True{} : Bool}
+  %Equal.sym(Bool, c3, True{}, h3) : {Bool.and(_, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))) == True{} : Bool}
+  %Equal.sym(Bool, c4, True{}, h4) : {Bool.and(_, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))) == True{} : Bool}
+  %Equal.sym(Bool, c5, True{}, h5) : {Bool.and(_, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))) == True{} : Bool}
+  %Equal.sym(Bool, c6, True{}, h6) : {Bool.and(_, Bool.and(c7, Bool.and(c8, c9))) == True{} : Bool}
+  %Equal.sym(Bool, c7, True{}, h7) : {Bool.and(_, Bool.and(c8, c9)) == True{} : Bool}
+  %Equal.sym(Bool, c8, True{}, h8) : {Bool.and(_, c9) == True{} : Bool}
+  h9
+
+def and9_1(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c1 == True{} : Bool}:
+  bool_and_l(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h)
+
+def and9_2(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c2 == True{} : Bool}:
+  bool_and_l(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h))
+
+def and9_3(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c3 == True{} : Bool}:
+  bool_and_l(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h)))
+
+def and9_4(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c4 == True{} : Bool}:
+  bool_and_l(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h))))
+
+def and9_5(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c5 == True{} : Bool}:
+  bool_and_l(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))), bool_and_r(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h)))))
+
+def and9_6(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c6 == True{} : Bool}:
+  bool_and_l(c6, Bool.and(c7, Bool.and(c8, c9)), bool_and_r(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))), bool_and_r(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h))))))
+
+def and9_7(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c7 == True{} : Bool}:
+  bool_and_l(c7, Bool.and(c8, c9), bool_and_r(c6, Bool.and(c7, Bool.and(c8, c9)), bool_and_r(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))), bool_and_r(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h)))))))
+
+def and9_8(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c8 == True{} : Bool}:
+  bool_and_l(c8, c9, bool_and_r(c7, Bool.and(c8, c9), bool_and_r(c6, Bool.and(c7, Bool.and(c8, c9)), bool_and_r(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))), bool_and_r(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h))))))))
+
+def and9_9(+c1: Bool, +c2: Bool, +c3: Bool, +c4: Bool, +c5: Bool, +c6: Bool, +c7: Bool, +c8: Bool, +c9: Bool, h: {Bool.and(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))))) == True{} : Bool}) -> {c9 == True{} : Bool}:
+  bool_and_r(c8, c9, bool_and_r(c7, Bool.and(c8, c9), bool_and_r(c6, Bool.and(c7, Bool.and(c8, c9)), bool_and_r(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))), bool_and_r(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))), bool_and_r(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))), bool_and_r(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9)))))), bool_and_r(c1, Bool.and(c2, Bool.and(c3, Bool.and(c4, Bool.and(c5, Bool.and(c6, Bool.and(c7, Bool.and(c8, c9))))))), h))))))))
+
+
+# ---------------------------------------------------------------- SVD column lists
+
+def svd_vok(cols: List<&2, L.SVDCol>, +nn: Nat) -> Bool:
+  match cols:
+    case Nil{}:
+      True{}
+    case Con{L.SVDCol{_, _, v}, t}:
+      Bool.and(Nat.is_eq(List.length(&2, F32, v), nn), svd_vok(t, nn))
+
+def svd_ins_pick_len(ge: Bool, +x: L.SVDCol, +y: L.SVDCol, +t: List<&2, L.SVDCol>, +rec: List<&2, L.SVDCol>, hrec: {List.length(&2, L.SVDCol, rec) == 1n+List.length(&2, L.SVDCol, t) : Nat}) -> {List.length(&2, L.SVDCol, L.svd_ins.pick(ge, x, y, t, rec)) == 1n+1n+List.length(&2, L.SVDCol, t) : Nat}:
+  match ge:
+    case True{}:
+      {==}
+    case False{}:
+      %Equal.sym(Nat, List.length(&2, L.SVDCol, rec), 1n+List.length(&2, L.SVDCol, t), hrec) : {1n+_ == 1n+1n+List.length(&2, L.SVDCol, t) : Nat}
+      {==}
+
+def svd_ins_len(+x: L.SVDCol, xs: List<&2, L.SVDCol>) -> {List.length(&2, L.SVDCol, L.svd_ins(x, xs)) == 1n+List.length(&2, L.SVDCol, xs) : Nat}:
+  match x xs:
+    case L.SVDCol{+sx, +ux, +vx} Nil{}:
+      {==}
+    case L.SVDCol{+sx, +ux, +vx} Con{L.SVDCol{+sy, +uy, +vy}, +t}:
+      svd_ins_pick_len(F32.is_ge(sx, sy), L.SVDCol{sx, ux, vx}, L.SVDCol{sy, uy, vy}, t, L.svd_ins(L.SVDCol{sx, ux, vx}, t), svd_ins_len(L.SVDCol{sx, ux, vx}, t))
+
+def svd_sort_len(xs: List<&2, L.SVDCol>) -> {List.length(&2, L.SVDCol, L.svd_sort(xs)) == List.length(&2, L.SVDCol, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+h, +t}:
+      Equal.trans(Nat, List.length(&2, L.SVDCol, L.svd_ins(h, L.svd_sort(t))), 1n+List.length(&2, L.SVDCol, L.svd_sort(t)), 1n+List.length(&2, L.SVDCol, t), svd_ins_len(h, L.svd_sort(t)), Equal.cong(Nat, Nat, q => 1n+q, List.length(&2, L.SVDCol, L.svd_sort(t)), List.length(&2, L.SVDCol, t), svd_sort_len(t)))
+
+def svd_ins_pick_ok(ge: Bool, +sx: F32, +ux: List<&2, F32>, +vx: List<&2, F32>, +sy: F32, +uy: List<&2, F32>, +vy: List<&2, F32>, +t: List<&2, L.SVDCol>, +rec: List<&2, L.SVDCol>, +nn: Nat, hx: {Nat.is_eq(List.length(&2, F32, vx), nn) == True{} : Bool}, hy: {Nat.is_eq(List.length(&2, F32, vy), nn) == True{} : Bool}, ht: {svd_vok(t, nn) == True{} : Bool}, hrec: {svd_vok(rec, nn) == True{} : Bool}) -> {svd_vok(L.svd_ins.pick(ge, L.SVDCol{sx, ux, vx}, L.SVDCol{sy, uy, vy}, t, rec), nn) == True{} : Bool}:
+  match ge:
+    case True{}:
+      %Equal.sym(Bool, Nat.is_eq(List.length(&2, F32, vx), nn), True{}, hx) : {Bool.and(_, Bool.and(Nat.is_eq(List.length(&2, F32, vy), nn), svd_vok(t, nn))) == True{} : Bool}
+      %Equal.sym(Bool, Nat.is_eq(List.length(&2, F32, vy), nn), True{}, hy) : {Bool.and(_, svd_vok(t, nn)) == True{} : Bool}
+      ht
+    case False{}:
+      %Equal.sym(Bool, Nat.is_eq(List.length(&2, F32, vy), nn), True{}, hy) : {Bool.and(_, svd_vok(rec, nn)) == True{} : Bool}
+      hrec
+
+def svd_ins_ok(+x: L.SVDCol, xs: List<&2, L.SVDCol>, +nn: Nat, +hx: {svd_vok(x <> Nil{}, nn) == True{} : Bool}, +hxs: {svd_vok(xs, nn) == True{} : Bool}) -> {svd_vok(L.svd_ins(x, xs), nn) == True{} : Bool}:
+  match x xs:
+    case L.SVDCol{+sx, +ux, +vx} Nil{}:
+      hx
+    case L.SVDCol{+sx, +ux, +vx} Con{L.SVDCol{+sy, +uy, +vy}, +t}:
+      +hx1 = bool_and_l(Nat.is_eq(List.length(&2, F32, vx), nn), True{}, hx)
+      +hy1 = bool_and_l(Nat.is_eq(List.length(&2, F32, vy), nn), svd_vok(t, nn), hxs)
+      +ht1 = bool_and_r(Nat.is_eq(List.length(&2, F32, vy), nn), svd_vok(t, nn), hxs)
+      svd_ins_pick_ok(F32.is_ge(sx, sy), sx, ux, vx, sy, uy, vy, t, L.svd_ins(L.SVDCol{sx, ux, vx}, t), nn, hx1, hy1, ht1, svd_ins_ok(L.SVDCol{sx, ux, vx}, t, nn, hx, ht1))
+
+def svd_sort_ok(xs: List<&2, L.SVDCol>, +nn: Nat, +h: {svd_vok(xs, nn) == True{} : Bool}) -> {svd_vok(L.svd_sort(xs), nn) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{L.SVDCol{+s, +u, +v}, +t}:
+      +hc = bool_and_l(Nat.is_eq(List.length(&2, F32, v), nn), svd_vok(t, nn), h)
+      +ht = bool_and_r(Nat.is_eq(List.length(&2, F32, v), nn), svd_vok(t, nn), h)
+      svd_ins_ok(L.SVDCol{s, u, v}, L.svd_sort(t), nn, and2(Nat.is_eq(List.length(&2, F32, v), nn), True{}, hc, {==}), svd_sort_ok(t, nn, ht))
+
+def svd_sigs_len(xs: List<&2, L.SVDCol>) -> {List.length(&2, F32, L.svd_sigs(xs)) == List.length(&2, L.SVDCol, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{L.SVDCol{_, _, _}, +t}:
+      %Equal.sym(Nat, List.length(&2, F32, L.svd_sigs(t)), List.length(&2, L.SVDCol, t), svd_sigs_len(t)) : {1n+_ == 1n+List.length(&2, L.SVDCol, t) : Nat}
+      {==}
+
+def svd_vrows_len(xs: List<&2, L.SVDCol>) -> {List.length(&2, List<&2, F32>, L.svd_vrows(xs)) == List.length(&2, L.SVDCol, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{L.SVDCol{_, _, _}, +t}:
+      %Equal.sym(Nat, List.length(&2, List<&2, F32>, L.svd_vrows(t)), List.length(&2, L.SVDCol, t), svd_vrows_len(t)) : {1n+_ == 1n+List.length(&2, L.SVDCol, t) : Nat}
+      {==}
+
+def svd_vrows_ok(xs: List<&2, L.SVDCol>, +nn: Nat, +h: {svd_vok(xs, nn) == True{} : Bool}) -> {L.Mat.rows.ok(L.svd_vrows(xs), nn) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{L.SVDCol{_, _, +v}, +t}:
+      +hc = bool_and_l(Nat.is_eq(List.length(&2, F32, v), nn), svd_vok(t, nn), h)
+      +ht = bool_and_r(Nat.is_eq(List.length(&2, F32, v), nn), svd_vok(t, nn), h)
+      %Equal.sym(Bool, Nat.is_eq(List.length(&2, F32, v), nn), True{}, hc) : {Bool.and(_, L.Mat.rows.ok(L.svd_vrows(t), nn)) == True{} : Bool}
+      svd_vrows_ok(t, nn, ht)
+
+def svd_build_u_len(cols: List<&2, L.SVDCol>, +basis: List<&2, List<&2, F32>>, +nn: Nat) -> {List.length(&2, List<&2, F32>, L.svd_build_u(cols, basis, nn)) == Nat.add(List.length(&2, L.SVDCol, cols), List.length(&2, List<&2, F32>, basis)) : Nat}:
+  match cols:
+    case Nil{}:
+      MList.length_reverse(&2, List<&2, F32>, basis)
+    case Con{L.SVDCol{+sig, ucol, _}, +t}:
+      +u = L.svd_norm_u.pos(F32.is_gt(sig, 0.0), sig, ucol, nn, basis)
+      Equal.trans(Nat, List.length(&2, List<&2, F32>, L.svd_build_u(t, u <> basis, nn)), Nat.add(List.length(&2, L.SVDCol, t), 1n+List.length(&2, List<&2, F32>, basis)), 1n+Nat.add(List.length(&2, L.SVDCol, t), List.length(&2, List<&2, F32>, basis)), svd_build_u_len(t, u <> basis, nn), add_succ_r(List.length(&2, L.SVDCol, t), List.length(&2, List<&2, F32>, basis)))
+
+# ---------------------------------------------------------------- svd_thin shape
+
+def svd_intro(+um: Nat, +un: Nat, +urows: List<&2, List<&2, F32>>, +k: Nat, +sigs: List<&2, F32>, +vm: Nat, +vn: Nat, +vrows: List<&2, List<&2, F32>>, +m: Nat, +n: Nat, e1: {um == m : Nat}, e2: {un == k : Nat}, e3: {vm == k : Nat}, e4: {vn == n : Nat}, e5: {List.length(&2, List<&2, F32>, urows) == m : Nat}, h6: {L.Mat.rows.ok(urows, k) == True{} : Bool}, e7: {List.length(&2, F32, sigs) == k : Nat}, e8: {List.length(&2, List<&2, F32>, vrows) == k : Nat}, h9: {L.Mat.rows.ok(vrows, n) == True{} : Bool}) -> {Laws.svd_shape(um, un, urows, k, sigs, vm, vn, vrows, m, n) == True{} : Bool}:
+  and9(Nat.is_eq(um, m), Nat.is_eq(un, k), Nat.is_eq(vm, k), Nat.is_eq(vn, n), Nat.is_eq(List.length(&2, List<&2, F32>, urows), m), L.Mat.rows.ok(urows, k), Nat.is_eq(List.length(&2, F32, sigs), k), Nat.is_eq(List.length(&2, List<&2, F32>, vrows), k), L.Mat.rows.ok(vrows, n), eq_true(um, m, e1), eq_true(un, k, e2), eq_true(vm, k, e3), eq_true(vn, n, e4), eq_true(List.length(&2, List<&2, F32>, urows), m, e5), h6, eq_true(List.length(&2, F32, sigs), k, e7), eq_true(List.length(&2, List<&2, F32>, vrows), k, e8), h9)
+
+def fin_p(cols: List<&2, L.SVDCol>, +q0: List<&2, List<&2, F32>>, +m: U32, +n: U32, +nn: Nat) -> Bool:
+  +sorted = L.svd_sort(cols)
+  Laws.svd_shape(U32.to_nat(m), U32.to_nat(n), L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, m, L.svd_build_u(sorted, Nil{}, nn)), U32.to_nat(n), L.svd_sigs(sorted), U32.to_nat(n), U32.to_nat(n), L.svd_vrows(sorted), U32.to_nat(m), U32.to_nat(n))
+
+def fin_from_cols(+cols: List<&2, L.SVDCol>, +q0: List<&2, List<&2, F32>>, +m: U32, +n: U32, +nn: Nat, +hq: {List.length(&2, List<&2, F32>, q0) == U32.to_nat(m) : Nat}, +hl: {List.length(&2, L.SVDCol, cols) == nn : Nat}, +ho: {svd_vok(cols, nn) == True{} : Bool}, +hnn: {nn == U32.to_nat(n) : Nat}) -> {fin_p(cols, q0, m, n, nn) == True{} : Bool}:
+  +sorted = L.svd_sort(cols)
+  +ucols = L.svd_build_u(sorted, Nil{}, nn)
+  +urows = L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, ucols)
+  +hlen_s = Equal.trans(Nat, List.length(&2, L.SVDCol, sorted), List.length(&2, L.SVDCol, cols), U32.to_nat(n), svd_sort_len(cols), Equal.trans(Nat, List.length(&2, L.SVDCol, cols), nn, U32.to_nat(n), hl, hnn))
+  +hok_s = svd_sort_ok(cols, nn, ho)
+  +hlen_u = Equal.trans(Nat, List.length(&2, List<&2, F32>, ucols), Nat.add(List.length(&2, L.SVDCol, sorted), 0n), U32.to_nat(n), svd_build_u_len(sorted, Nil{}, nn), Equal.trans(Nat, Nat.add(List.length(&2, L.SVDCol, sorted), 0n), List.length(&2, L.SVDCol, sorted), U32.to_nat(n), add_zero_r(List.length(&2, L.SVDCol, sorted)), hlen_s))
+  %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, m, ucols), L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, ucols), Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, m, ucols)) : {Laws.svd_shape(U32.to_nat(m), U32.to_nat(n), _, U32.to_nat(n), L.svd_sigs(sorted), U32.to_nat(n), U32.to_nat(n), L.svd_vrows(sorted), U32.to_nat(m), U32.to_nat(n)) == True{} : Bool}
+  svd_intro(U32.to_nat(m), U32.to_nat(n), urows, U32.to_nat(n), L.svd_sigs(sorted), U32.to_nat(n), U32.to_nat(n), L.svd_vrows(sorted), U32.to_nat(m), U32.to_nat(n), {==}, {==}, {==}, {==}, Equal.trans(Nat, List.length(&2, List<&2, F32>, urows), List.length(&2, List<&2, F32>, q0), U32.to_nat(m), pseq_len(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, q0, ucols), hq), mm_rows_ok(q0, ucols, U32.to_nat(n), hlen_u), Equal.trans(Nat, List.length(&2, F32, L.svd_sigs(sorted)), List.length(&2, L.SVDCol, sorted), U32.to_nat(n), svd_sigs_len(sorted), hlen_s), Equal.trans(Nat, List.length(&2, List<&2, F32>, L.svd_vrows(sorted)), List.length(&2, L.SVDCol, sorted), U32.to_nat(n), svd_vrows_len(sorted), hlen_s), rows_ok_eq(L.svd_vrows(sorted), nn, U32.to_nat(n), hnn, svd_vrows_ok(sorted, nn, hok_s)))
+
+# Walks svd_extract.loop and the read_down.loop under it together (lexicographic in
+# (outer, inner)) so each Array is used once; the invariant lives on the Data lists.
+def ext_lex(+outer: Nat, +inner: Nat, rb: Array<F32> & List<&2, F32>, r: Array<F32> & F32, +rd_acc: List<&2, F32>, +base: U32, +acc: List<&2, L.SVDCol>, +nn: Nat, +n: U32, +q0: List<&2, List<&2, F32>>, +m: U32, +hq: {List.length(&2, List<&2, F32>, q0) == U32.to_nat(m) : Nat}, +hlen: {1n+Nat.add(inner, List.length(&2, F32, rd_acc)) == nn : Nat}, +hcnt: {1n+Nat.add(outer, List.length(&2, L.SVDCol, acc)) == nn : Nat}, +ha: {svd_vok(acc, nn) == True{} : Bool}, +hnn: {nn == U32.to_nat(n) : Nat}) -> {fin_p(L.svd_extract.loop(outer, rb, L.read_down.loop(inner, r, rd_acc, base), acc, nn, n), q0, m, n, nn) == True{} : Bool}:
+  match outer inner:
+    case _ 1n+(+q):
+      match r:
+        case (a, +val):
+          +hl2 = Equal.trans(Nat, 1n+Nat.add(q, 1n+List.length(&2, F32, rd_acc)), 1n+1n+Nat.add(q, List.length(&2, F32, rd_acc)), nn, Equal.cong(Nat, Nat, z => 1n+z, Nat.add(q, 1n+List.length(&2, F32, rd_acc)), 1n+Nat.add(q, List.length(&2, F32, rd_acc)), add_succ_r(q, List.length(&2, F32, rd_acc))), hlen)
+          ext_lex(outer, q, rb, Array.get(F32, a, (base + U32.from_nat(q) : U32)), val <> rd_acc, base, acc, nn, n, q0, m, hq, hl2, hcnt, ha, hnn)
+    case 0n 0n:
+      match rb:
+        case (_, +bcol):
+          match r:
+            case (a, +val):
+              +col = {val <> rd_acc : List<&2, F32>}
+              +cols = {L.SVDCol{F32.sqrt(L.dot_raw(bcol, bcol)), bcol, col} <> acc : List<&2, L.SVDCol>}
+              fin_from_cols(cols, q0, m, n, nn, hq, hcnt, and2(Nat.is_eq(List.length(&2, F32, col), nn), svd_vok(acc, nn), eq_true(List.length(&2, F32, col), nn, hlen), ha), hnn)
+    case 1n+(+p) 0n:
+      match rb:
+        case (b, +bcol):
+          match r:
+            case (a, +val):
+              match nn:
+                case 0n:
+                  Empty.absurd({fin_p(L.svd_extract.loop(1n+p, rb, L.read_down.loop(0n, (a, val), rd_acc, base), acc, 0n, n), q0, m, n, 0n) == True{} : Bool}, succ_ne_zero(List.length(&2, F32, rd_acc), hlen))
+                case 1n+(+n1):
+                  +col = {val <> rd_acc : List<&2, F32>}
+                  +acc2 = {L.SVDCol{F32.sqrt(L.dot_raw(bcol, bcol)), bcol, col} <> acc : List<&2, L.SVDCol>}
+                  +off = (U32.from_nat(p) * n : U32)
+                  +hcnt2 = Equal.trans(Nat, 1n+Nat.add(p, 1n+List.length(&2, L.SVDCol, acc)), 1n+1n+Nat.add(p, List.length(&2, L.SVDCol, acc)), 1n+n1, Equal.cong(Nat, Nat, z => 1n+z, Nat.add(p, 1n+List.length(&2, L.SVDCol, acc)), 1n+Nat.add(p, List.length(&2, L.SVDCol, acc)), add_succ_r(p, List.length(&2, L.SVDCol, acc))), hcnt)
+                  +ha2 = and2(Nat.is_eq(List.length(&2, F32, col), 1n+n1), svd_vok(acc, 1n+n1), eq_true(List.length(&2, F32, col), 1n+n1, hlen), ha)
+                  ext_lex(p, n1, L.read_down(1n+n1, b, Nil{}, off), Array.get(F32, a, (off + U32.from_nat(n1) : U32)), Nil{}, off, acc2, 1n+n1, n, q0, m, hq, Equal.cong(Nat, Nat, z => 1n+z, Nat.add(n1, 0n), n1, add_zero_r(n1)), hcnt2, ha2, hnn)
+
+def ext_go_fin(+nn: Nat, b: Array<F32>, v: Array<F32>, +q0: List<&2, List<&2, F32>>, +m: U32, +n: U32, +hq: {List.length(&2, List<&2, F32>, q0) == U32.to_nat(m) : Nat}, +hnn: {nn == U32.to_nat(n) : Nat}) -> {fin_p(L.svd_extract.go(nn, b, v, Nil{}, nn, n), q0, m, n, nn) == True{} : Bool}:
+  match nn:
+    case 0n:
+      fin_from_cols(Nil{}, q0, m, n, 0n, hq, {==}, {==}, hnn)
+    case 1n+(+n1):
+      +off = (U32.from_nat(n1) * n : U32)
+      +h1 = Equal.cong(Nat, Nat, z => 1n+z, Nat.add(n1, 0n), n1, add_zero_r(n1))
+      ext_lex(n1, n1, L.read_down(1n+n1, b, Nil{}, off), Array.get(F32, v, (off + U32.from_nat(n1) : U32)), Nil{}, off, Nil{}, 1n+n1, n, q0, m, hq, h1, h1, {==}, hnn)
+
+def tall_fin_ok(st: L.JSt, +q0: List<&2, List<&2, F32>>, +m: U32, +n: U32, +hq: {List.length(&2, List<&2, F32>, q0) == U32.to_nat(m) : Nat}) -> {Laws.svd_ok(L.svd_tall.fin(st, q0, m, n), m, n) == True{} : Bool}:
+  match st:
+    case L.JSt{b, v, _}:
+      ext_go_fin(U32.to_nat(n), b, v, q0, m, n, hq, {==})
+
+def tall_qr_ok(qr: L.QR, +m: U32, +n: U32, hq: {Nat.is_eq(List.length(&2, List<&2, F32>, Laws.mat_rows(Laws.qr_q(qr))), U32.to_nat(m)) == True{} : Bool}) -> {Laws.svd_ok(L.svd_tall.from_qr(qr, m, n), m, n) == True{} : Bool}:
+  match qr:
+    case L.QR{L.Mat{_, _, +q0}, L.Mat{_, _, r0}}:
+      +nn = U32.to_nat(n)
+      tall_fin_ok(L.svd_j.sweeps(20n, L.JSt{L.mat_to_colmajor(r0, n, n), L.fill_eye_cm(nn, Array.new(F32, L.arr_depth((n * n : U32)), 0.0), 0, n), True{}}, n, nn), q0, m, n, nat_eq_sound(List.length(&2, List<&2, F32>, q0), U32.to_nat(m), hq))
+
+def vscale_len(+s: F32, xs: List<&2, F32>) -> {List.length(&2, F32, L.vscale.go(s, xs)) == List.length(&2, F32, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{x, t}:
+      %vscale_len(s, t) : {1n+List.length(&2, F32, L.vscale.go(s, t)) == 1n+_ : Nat}
+      {==}
+
+def row_unit_len(rem: Nat, +j: Nat, +target: Nat) -> {List.length(&2, F32, L.row_unit(rem, j, target)) == rem : Nat}:
+  match rem:
+    case 0n:
+      {==}
+    case 1n+p:
+      %row_unit_len(p, 1n+j, target) : {1n+List.length(&2, F32, L.row_unit(p, 1n+j, target)) == 1n+_ : Nat}
+      {==}
+
+def n1_col_len(rows: List<&2, List<&2, F32>>) -> {List.length(&2, F32, L.svd_tall.n1_col(rows)) == List.length(&2, List<&2, F32>, rows) : Nat}:
+  match rows:
+    case Nil{}:
+      {==}
+    case Con{Con{x, _}, t}:
+      %n1_col_len(t) : {1n+List.length(&2, F32, L.svd_tall.n1_col(t)) == 1n+_ : Nat}
+      {==}
+    case Con{Nil{}, t}:
+      %n1_col_len(t) : {1n+List.length(&2, F32, L.svd_tall.n1_col(t)) == 1n+_ : Nat}
+      {==}
+
+def n1_unit_len(pos: Bool, +s0: F32, +col: List<&2, F32>, +m: U32, hc: {List.length(&2, F32, col) == U32.to_nat(m) : Nat}) -> {List.length(&2, F32, L.svd_tall.n1_unit(pos, s0, col, m)) == U32.to_nat(m) : Nat}:
+  match pos:
+    case True{}:
+      Equal.trans(Nat, List.length(&2, F32, L.vscale.go((1.0 / s0 : F32), col)), List.length(&2, F32, col), U32.to_nat(m), vscale_len((1.0 / s0 : F32), col), hc)
+    case False{}:
+      row_unit_len(U32.to_nat(m), 0n, 0n)
+
+def tall_n1_ok(+rows: List<&2, List<&2, F32>>, +m: U32, +n: U32, hn: {U32.is_eq(n, 1) == True{} : Bool}, hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}) -> {Laws.svd_ok(L.svd_tall.n1(rows, m), m, n) == True{} : Bool}:
+  +mm = U32.to_nat(m)
+  +col = L.svd_tall.n1_col(rows)
+  +s0 = F32.sqrt(L.dot_raw(col, col))
+  +ucol = L.svd_tall.n1_unit(F32.is_gt(s0, 0.0), s0, col, m)
+  +rep = List.replicate(List<&2, F32>, mm, Nil{})
+  +hu = n1_unit_len(F32.is_gt(s0, 0.0), s0, col, m, Equal.trans(Nat, List.length(&2, F32, col), List.length(&2, List<&2, F32>, rows), mm, n1_col_len(rows), hl))
+  +hz = Equal.trans(Nat, List.length(&2, F32, ucol), mm, List.length(&2, List<&2, F32>, rep), hu, Equal.sym(Nat, List.length(&2, List<&2, F32>, rep), mm, len_replicate(List<&2, F32>, mm, Nil{})))
+  +e1n = Equal.sym(Nat, U32.to_nat(n), U32.to_nat(1), u32_eq_nat(n, 1, hn))
+  svd_intro(mm, 1n, L.zip_cons(ucol, rep), 1n, s0 <> Nil{}, 1n, 1n, (1.0 <> Nil{}) <> Nil{}, mm, U32.to_nat(n), {==}, {==}, {==}, e1n, Equal.trans(Nat, List.length(&2, List<&2, F32>, L.zip_cons(ucol, rep)), List.length(&2, F32, ucol), mm, zip_cons_len(ucol, rep, hz), hu), zip_cons_ok(ucol, rep, 0n, hz, replicate_nil_ok(mm)), {==}, {==}, rows_ok_eq((1.0 <> Nil{}) <> Nil{}, 1n, U32.to_nat(n), e1n, {==}))
+
+def tall_gt0_ok(+rows: List<&2, List<&2, F32>>, +m: U32, +n: U32, o: Bool, ho: {o == U32.is_eq(n, 1) : Bool}, hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}) -> {Laws.svd_ok(L.svd_tall.gt0(o, rows, m, n), m, n) == True{} : Bool}:
+  match o:
+    case True{}:
+      tall_n1_ok(rows, m, n, Equal.sym(Bool, True{}, U32.is_eq(n, 1), ho), hl)
+    case False{}:
+      +qr = L.qr_thin.fin(L.qr_factor_arr(rows, m, n), m, n)
+      tall_qr_ok(qr, m, n, bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, Laws.mat_rows(Laws.qr_q(qr))), U32.to_nat(m)), L.Mat.rows.ok(Laws.mat_rows(Laws.qr_q(qr)), U32.to_nat(n)), qr_fin_q_shape(L.qr_factor_arr(rows, m, n), m, n, qr, {==})))
+
+def tall_go_ok(+rows: List<&2, List<&2, F32>>, +m: U32, +n: U32, z: Bool, hz: {z == U32.is_eq(n, 0) : Bool}, hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}) -> {Laws.svd_ok(L.svd_tall.go(z, rows, m, n), m, n) == True{} : Bool}:
+  match z:
+    case True{}:
+      +mm = U32.to_nat(m)
+      +e0 = Equal.sym(Nat, U32.to_nat(n), U32.to_nat(0), u32_eq_nat(n, 0, Equal.sym(Bool, True{}, U32.is_eq(n, 0), hz)))
+      svd_intro(mm, 0n, List.replicate(List<&2, F32>, mm, Nil{}), 0n, Nil{}, 0n, 0n, Nil{}, mm, U32.to_nat(n), {==}, {==}, {==}, e0, len_replicate(List<&2, F32>, mm, Nil{}), replicate_nil_ok(mm), {==}, {==}, {==})
+    case False{}:
+      tall_gt0_ok(rows, m, n, U32.is_eq(n, 1), {==}, hl)
+
+def flip_ok(sv: L.SVD, +m: U32, +n: U32, +h: {Laws.svd_ok(sv, n, m) == True{} : Bool}) -> {Laws.svd_ok(L.svd_wide.flip(sv), m, n) == True{} : Bool}:
+  match sv:
+    case L.SVD{L.Mat{+um, +un, +ur}, L.Vec{+k, +s}, L.Mat{+vm, +vn, +vr}}:
+      +e1 = nat_eq_sound(U32.to_nat(um), U32.to_nat(n), and9_1(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +e2 = nat_eq_sound(U32.to_nat(un), U32.to_nat(k), and9_2(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +e3 = nat_eq_sound(U32.to_nat(vm), U32.to_nat(k), and9_3(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +e4 = nat_eq_sound(U32.to_nat(vn), U32.to_nat(m), and9_4(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +e5 = nat_eq_sound(List.length(&2, List<&2, F32>, ur), U32.to_nat(n), and9_5(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +f6 = and9_6(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h)
+      +e7 = nat_eq_sound(List.length(&2, F32, s), U32.to_nat(k), and9_7(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +e8 = nat_eq_sound(List.length(&2, List<&2, F32>, vr), U32.to_nat(k), and9_8(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h))
+      +f9 = and9_9(Nat.is_eq(U32.to_nat(um), U32.to_nat(n)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(m)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(n)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(m)), h)
+      +okvr = rows_ok_eq(vr, U32.to_nat(m), U32.to_nat(vn), Equal.sym(Nat, U32.to_nat(vn), U32.to_nat(m), e4), f9)
+      +okur = rows_ok_eq(ur, U32.to_nat(k), U32.to_nat(un), Equal.sym(Nat, U32.to_nat(un), U32.to_nat(k), e2), f6)
+      +t1 = L.transpose.rows(vr, U32.to_nat(vn))
+      +t2 = L.transpose.rows(ur, U32.to_nat(un))
+      svd_intro(U32.to_nat(vn), U32.to_nat(vm), t1, U32.to_nat(k), s, U32.to_nat(un), U32.to_nat(um), t2, U32.to_nat(m), U32.to_nat(n), e4, e3, e2, e1, Equal.trans(Nat, List.length(&2, List<&2, F32>, t1), U32.to_nat(vn), U32.to_nat(m), Laws.transpose_len(vr, U32.to_nat(vn), okvr), e4), rows_ok_eq(t1, List.length(&2, List<&2, F32>, vr), U32.to_nat(k), e8, Laws.transpose_row_len(vr, U32.to_nat(vn), okvr)), e7, Equal.trans(Nat, List.length(&2, List<&2, F32>, t2), U32.to_nat(un), U32.to_nat(k), Laws.transpose_len(ur, U32.to_nat(un), okur), e2), rows_ok_eq(t2, List.length(&2, List<&2, F32>, ur), U32.to_nat(n), e5, Laws.transpose_row_len(ur, U32.to_nat(un), okur)))
+
+def dir_ok(t: Bool, +m: U32, +n: U32, +rows: List<&2, List<&2, F32>>, +hl: {List.length(&2, List<&2, F32>, rows) == U32.to_nat(m) : Nat}, +hr: {L.Mat.rows.ok(rows, U32.to_nat(n)) == True{} : Bool}) -> {Laws.svd_ok(L.svd_thin.dir(t, m, n, rows), m, n) == True{} : Bool}:
+  match t:
+    case True{}:
+      tall_go_ok(rows, m, n, U32.is_eq(n, 0), {==}, hl)
+    case False{}:
+      +tr = L.transpose.rows(rows, U32.to_nat(n))
+      flip_ok(L.svd_tall.go(U32.is_eq(m, 0), tr, n, m), m, n, tall_go_ok(tr, n, m, U32.is_eq(m, 0), {==}, Laws.transpose_len(rows, U32.to_nat(n), hr)))
+
+def Laws.svd_thin_ok(a, h):
+  match a:
+    case L.Mat{+m, +n, +rows}:
+      +hl = nat_eq_sound(List.length(&2, List<&2, F32>, rows), U32.to_nat(m), bool_and_l(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n)), h))
+      +hr = bool_and_r(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n)), h)
+      dir_ok(U32.is_ge(m, n), m, n, rows, hl, hr)
+
+def inv_sigs_len(xs: List<&2, F32>, +cut: F32) -> {List.length(&2, F32, L.pinv.inv_sigs(xs, cut)) == List.length(&2, F32, xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+x, t}:
+      %inv_sigs_len(t, cut) : {1n+List.length(&2, F32, L.pinv.inv_sigs(t, cut)) == 1n+_ : Nat}
+      {==}
+
+def diag_mul_len(ds: List<&2, F32>, rows: List<&2, List<&2, F32>>, h: {List.length(&2, F32, ds) == List.length(&2, List<&2, F32>, rows) : Nat}) -> {List.length(&2, List<&2, F32>, L.diag_mul.rows(ds, rows)) == List.length(&2, List<&2, F32>, rows) : Nat}:
+  match ds rows:
+    case Nil{} Nil{}:
+      {==}
+    case Nil{} Con{r, rt}:
+      Empty.absurd({0n == 1n+List.length(&2, List<&2, F32>, rt) : Nat}, zero_ne_succ(List.length(&2, List<&2, F32>, rt), h))
+    case Con{d, dt} Nil{}:
+      Empty.absurd({0n == 0n : Nat}, succ_ne_zero(List.length(&2, F32, dt), h))
+    case Con{d, +dt} Con{r, +rt}:
+      %diag_mul_len(dt, rt, nat_pred_eq(List.length(&2, F32, dt), List.length(&2, List<&2, F32>, rt), h)) : {1n+List.length(&2, List<&2, F32>, L.diag_mul.rows(dt, rt)) == 1n+_ : Nat}
+      {==}
+
+def diag_mul_ok(ds: List<&2, F32>, rows: List<&2, List<&2, F32>>, +n: Nat, +h: {L.Mat.rows.ok(rows, n) == True{} : Bool}) -> {L.Mat.rows.ok(L.diag_mul.rows(ds, rows), n) == True{} : Bool}:
+  match ds rows:
+    case Nil{} _:
+      {==}
+    case Con{d, dt} Nil{}:
+      {==}
+    case Con{+d, dt} Con{+r, +rt}:
+      +hr = bool_and_l(Nat.is_eq(List.length(&2, F32, r), n), L.Mat.rows.ok(rt, n), h)
+      +ht = bool_and_r(Nat.is_eq(List.length(&2, F32, r), n), L.Mat.rows.ok(rt, n), h)
+      %Equal.sym(Nat, List.length(&2, F32, L.vscale.go(d, r)), List.length(&2, F32, r), vscale_len(d, r)) : {Bool.and(Nat.is_eq(_, n), L.Mat.rows.ok(L.diag_mul.rows(dt, rt), n)) == True{} : Bool}
+      %Equal.sym(Bool, Nat.is_eq(List.length(&2, F32, r), n), True{}, hr) : {Bool.and(_, L.Mat.rows.ok(L.diag_mul.rows(dt, rt), n)) == True{} : Bool}
+      diag_mul_ok(dt, rt, n, ht)
+
+def pinv_from_ok(sv: L.SVD, +m: U32, +n: U32, +tol: F32, +h: {Laws.svd_ok(sv, m, n) == True{} : Bool}) -> {L.Mat.ok(L.pinv.from_svd(sv, m, n, tol)) == True{} : Bool}:
+  match sv:
+    case L.SVD{L.Mat{+um, +un, +ur}, L.Vec{+k, +s}, L.Mat{+vm, +vn, +vr}}:
+      +e5 = nat_eq_sound(List.length(&2, List<&2, F32>, ur), U32.to_nat(m), and9_5(Nat.is_eq(U32.to_nat(um), U32.to_nat(m)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(n)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(m)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(n)), h))
+      +f6 = and9_6(Nat.is_eq(U32.to_nat(um), U32.to_nat(m)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(n)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(m)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(n)), h)
+      +e7 = nat_eq_sound(List.length(&2, F32, s), U32.to_nat(k), and9_7(Nat.is_eq(U32.to_nat(um), U32.to_nat(m)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(n)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(m)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(n)), h))
+      +e8 = nat_eq_sound(List.length(&2, List<&2, F32>, vr), U32.to_nat(k), and9_8(Nat.is_eq(U32.to_nat(um), U32.to_nat(m)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(n)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(m)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(n)), h))
+      +f9 = and9_9(Nat.is_eq(U32.to_nat(um), U32.to_nat(m)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(n)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(m)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(n)), h)
+      +cut = (F32.max(0.0, tol) * L.pinv.max_sig(s) : F32)
+      +sinv = L.pinv.inv_sigs(s, cut)
+      +vrows = L.transpose.rows(vr, U32.to_nat(n))
+      +utrows = L.transpose.rows(ur, U32.to_nat(k))
+      +sut_rows = L.diag_mul.rows(sinv, utrows)
+      +sut_cols = L.transpose.rows(sut_rows, U32.to_nat(m))
+      +hut_len = Laws.transpose_len(ur, U32.to_nat(k), f6)
+      +hut_ok = rows_ok_eq(utrows, List.length(&2, List<&2, F32>, ur), U32.to_nat(m), e5, Laws.transpose_row_len(ur, U32.to_nat(k), f6))
+      +hsinv = Equal.trans(Nat, List.length(&2, F32, sinv), List.length(&2, F32, s), U32.to_nat(k), inv_sigs_len(s, cut), e7)
+      +hsut_ok = diag_mul_ok(sinv, utrows, U32.to_nat(m), hut_ok)
+      +hcols = Laws.transpose_len(sut_rows, U32.to_nat(m), hsut_ok)
+      +eps = Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, n, sut_cols), L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, sut_cols), Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, n, sut_cols))
+      %eps : {L.Mat.ok(L.Mat{n, m, _}) == True{} : Bool}
+      mat_ok_intro(n, m, L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, sut_cols), Equal.trans(Nat, List.length(&2, List<&2, F32>, L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, sut_cols)), List.length(&2, List<&2, F32>, vrows), U32.to_nat(n), pseq_len(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, vrows, sut_cols), Laws.transpose_len(vr, U32.to_nat(n), f9)), mm_rows_ok(vrows, sut_cols, U32.to_nat(m), hcols))
+
+def Laws.pinv_ok(a, tol, h):
+  match a:
+    case L.Mat{+m, +n, +rows}:
+      pinv_from_ok(L.svd_thin(L.Mat{m, n, rows}), m, n, tol, Laws.svd_thin_ok(L.Mat{m, n, rows}, h))
+
+def mshape_eq(+x: L.Mat, +p: Nat, +p2: Nat, +q: Nat, +q2: Nat, ep: {p == p2 : Nat}, eq: {q == q2 : Nat}, h: {Laws.mshape(x, p, q) == True{} : Bool}) -> {Laws.mshape(x, p2, q2) == True{} : Bool}:
+  %ep : {Laws.mshape(x, _, q2) == True{} : Bool}
+  %eq : {Laws.mshape(x, p, _) == True{} : Bool}
+  h
+
+def mm_some(e: Bool, +ma: U32, +nb: U32, +ra: List<&2, List<&2, F32>>, +rb: List<&2, List<&2, F32>>, +x: L.Mat, hp: {L.matmul.chk(e, ma, nb, ra, rb) == Some{x} : Maybe<&2, L.Mat>}, +hl: {List.length(&2, List<&2, F32>, ra) == U32.to_nat(ma) : Nat}, +hb: {L.Mat.rows.ok(rb, U32.to_nat(nb)) == True{} : Bool}) -> {Laws.mshape(x, U32.to_nat(ma), U32.to_nat(nb)) == True{} : Bool}:
+  match e:
+    case False{}:
+      Empty.absurd({Laws.mshape(x, U32.to_nat(ma), U32.to_nat(nb)) == True{} : Bool}, none_ne_some(x, hp))
+    case True{}:
+      +bcols = L.transpose.rows(rb, U32.to_nat(nb))
+      +rows = L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols)
+      %un_some_mat(L.Mat{ma, nb, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)}, x, hp) : {Laws.mshape(_, U32.to_nat(ma), U32.to_nat(nb)) == True{} : Bool}
+      %Equal.sym(List<&2, List<&2, F32>>, L.pmap(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols), L.pseq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), Laws.pmap_seq(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, ma, bcols)) : {Laws.mshape(L.Mat{ma, nb, _}, U32.to_nat(ma), U32.to_nat(nb)) == True{} : Bool}
+      +hok = mat_ok_intro(ma, nb, rows, Equal.trans(Nat, List.length(&2, List<&2, F32>, rows), List.length(&2, List<&2, F32>, ra), U32.to_nat(ma), pseq_len(~List<&2, F32>, ~List<&2, F32>, ~List<&2, List<&2, F32>>, ~L.matmul.row, ra, bcols), hl), mm_rows_ok(ra, bcols, U32.to_nat(nb), Laws.transpose_len(rb, U32.to_nat(nb), hb)))
+      and2(L.Mat.ok(L.Mat{ma, nb, rows}), Bool.and(Nat.is_eq(U32.to_nat(ma), U32.to_nat(ma)), Nat.is_eq(U32.to_nat(nb), U32.to_nat(nb))), hok, and2(Nat.is_eq(U32.to_nat(ma), U32.to_nat(ma)), Nat.is_eq(U32.to_nat(nb), U32.to_nat(nb)), nat_eq_refl(U32.to_nat(ma)), nat_eq_refl(U32.to_nat(nb))))
+
+def proc_from(sv: L.SVD, +kk: U32, +x: L.Mat, +hs: {Laws.svd_ok(sv, kk, kk) == True{} : Bool}, hp: {L.procrustes.from_svd(sv) == Some{x} : Maybe<&2, L.Mat>}) -> {Laws.mshape(x, U32.to_nat(kk), U32.to_nat(kk)) == True{} : Bool}:
+  match sv:
+    case L.SVD{L.Mat{+um, +un, +ur}, L.Vec{+k, +s}, L.Mat{+vm, +vn, +vr}}:
+      +e1 = nat_eq_sound(U32.to_nat(um), U32.to_nat(kk), and9_1(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs))
+      +e2 = nat_eq_sound(U32.to_nat(un), U32.to_nat(k), and9_2(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs))
+      +e4 = nat_eq_sound(U32.to_nat(vn), U32.to_nat(kk), and9_4(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs))
+      +e5 = nat_eq_sound(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk), and9_5(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs))
+      +f6 = and9_6(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs)
+      +f9 = and9_9(Nat.is_eq(U32.to_nat(um), U32.to_nat(kk)), Nat.is_eq(U32.to_nat(un), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vm), U32.to_nat(k)), Nat.is_eq(U32.to_nat(vn), U32.to_nat(kk)), Nat.is_eq(List.length(&2, List<&2, F32>, ur), U32.to_nat(kk)), L.Mat.rows.ok(ur, U32.to_nat(k)), Nat.is_eq(List.length(&2, F32, s), U32.to_nat(k)), Nat.is_eq(List.length(&2, List<&2, F32>, vr), U32.to_nat(k)), L.Mat.rows.ok(vr, U32.to_nat(kk)), hs)
+      +okvr = rows_ok_eq(vr, U32.to_nat(kk), U32.to_nat(vn), Equal.sym(Nat, U32.to_nat(vn), U32.to_nat(kk), e4), f9)
+      +okur = rows_ok_eq(ur, U32.to_nat(k), U32.to_nat(un), Equal.sym(Nat, U32.to_nat(un), U32.to_nat(k), e2), f6)
+      +t1 = L.transpose.rows(vr, U32.to_nat(vn))
+      +t2 = L.transpose.rows(ur, U32.to_nat(un))
+      +hb = rows_ok_eq(t2, List.length(&2, List<&2, F32>, ur), U32.to_nat(um), Equal.trans(Nat, List.length(&2, List<&2, F32>, ur), U32.to_nat(kk), U32.to_nat(um), e5, Equal.sym(Nat, U32.to_nat(um), U32.to_nat(kk), e1)), Laws.transpose_row_len(ur, U32.to_nat(un), okur))
+      mshape_eq(x, U32.to_nat(vn), U32.to_nat(kk), U32.to_nat(um), U32.to_nat(kk), e4, e1, mm_some(U32.is_eq(vm, un), vn, um, t1, t2, x, hp, Laws.transpose_len(vr, U32.to_nat(vn), okvr), hb))
+
+def proc_chk(ok: Bool, +ma: U32, +na: U32, +ar: List<&2, List<&2, F32>>, +mb: U32, +nb: U32, +br: List<&2, List<&2, F32>>, +x: L.Mat, hp: {L.procrustes.chk(ok, L.Mat{ma, na, ar}, L.Mat{mb, nb, br}) == Some{x} : Maybe<&2, L.Mat>}) -> {Laws.mshape(x, U32.to_nat(na), U32.to_nat(na)) == True{} : Bool}:
+  match ok:
+    case False{}:
+      Empty.absurd({Laws.mshape(x, U32.to_nat(na), U32.to_nat(na)) == True{} : Bool}, none_ne_some(x, hp))
+    case True{}:
+      +atb = {L.Mat{na, na, L.arr_colmajor_rows(L.wgram_arr.fin(L.atb_arr.i(U32.to_nat(na), L.WGramSt{L.mat_to_colmajor(ar, ma, na), L.mat_to_colmajor(br, ma, na), Array.new(F32, L.arr_depth((na * na : U32)), 0.0)}, 0, ma, U32.to_nat(ma), na)), na, na)} : L.Mat}
+      proc_from(L.svd_thin(atb), na, x, Laws.svd_thin_ok(atb, cm_rows_shape(L.wgram_arr.fin(L.atb_arr.i(U32.to_nat(na), L.WGramSt{L.mat_to_colmajor(ar, ma, na), L.mat_to_colmajor(br, ma, na), Array.new(F32, L.arr_depth((na * na : U32)), 0.0)}, 0, ma, U32.to_nat(ma), na)), na, na)), hp)
+
+def Laws.procrustes_shape(a, b, x, hp):
+  match a b:
+    case L.Mat{+ma, +na, +ar} L.Mat{+mb, +nb, +br}:
+      proc_chk(Bool.and(U32.is_eq(ma, mb), U32.is_eq(na, nb)), ma, na, ar, mb, nb, br, x, hp)

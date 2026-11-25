@@ -3,8 +3,8 @@
 Dense float32 linear algebra in Bend: vector and matrix ops, Cholesky, triangular solves, Woodbury and the Matrix Determinant Lemma, thin Householder QR, ordinary / weighted / equality-constrained least squares, cyclic Jacobi eigendecomposition, SPD matrix powers, thin SVD, Moore–Penrose pseudoinverse, and orthogonal Procrustes. [DESIGN.md](DESIGN.md) explains the layout and precision choices, and [bench/](bench/README.md) has the benchmark and conditioning numbers behind them.
 
 ```bend
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as I
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as I
 ```
 
 From a clone, import `./linalg/linalg.bend` and `./linalg/io.bend` instead. A `Mat` is a `Data` row list (`List<&2, List<&2, F32>>`), matching `signal`'s `Panel` layout directly so panels and matrices share rows with zero copying. `io.bend` imports `bend-kit-f32array@0.2.1.0` to read row-major float32 files.
@@ -13,17 +13,25 @@ The types and defs in the API table below are the public ones. Every other def i
 
 ## What is proved and what is tested
 
-`LAWS.bend` states 37 structural laws for every input, and `PROOF.bend` proves all 37 with zero `@unsafe` and no IO imports:
+`LAWS.bend` states 45 laws and `PROOF.bend` proves all of them with zero `@unsafe` and no IO imports. 24 are structural laws over every input, 14 are dimension guards, and 7 are fixed examples. `PROOF.bend` uses `bend-mathlib@0.1.0.0` for generic list lemmas.
 
-- **Validation (`from_rows_equal`, `from_rows_ragged`, `from_rows_ragged_last`, `from_rows_empty`):** `Mat.from_rows` accepts rectangular lists and rejects ragged rows.
-- **Parallel equivalence (`pmap_seq`, `pseq_get`):** the parallel fork-join map (`pmap`) gives the exact same list as the sequential loop (`pseq`) for every length. Every parallel op (`scale`, `slice_cols`, `mul_diag`, `outer`, `matvec`, `matmul`, `gram`, `wgram`) runs on it.
-- **Transpose (`transpose_len`, `transpose_row_len`, `transpose_get`, `transpose_involutive`):** transposing any rectangular `m × n` matrix produces `n` rows of length `m`, swaps `(i, j)` for every in-bounds and out-of-bounds index, and is an involution (`(A^T)^T == A`).
-- **Products (`matvec_entry`, `matmul_entry`, `matmul_mismatch`):** every entry of `matvec` and `matmul` routes the exact expected row and column dot product when dimensions match, and `matmul` returns `None` on mismatch.
-- **Exact structural symmetry (`mirror_upper_sym`, `gram_sym`, `wgram_sym`, `spd_pow_sym`):** `gram(A)`, `wgram(A, w)`, and `spd_pow(A, p)` construct bitwise-symmetric matrices with `get(M, i, j) == get(M, j, i)` for every `(i, j)`.
-- **Cholesky (`cholesky_nonsquare`, `cholesky_shape`, `cholesky_upper_zero`):** `cholesky` rejects non-square matrices with `None`; whenever it succeeds, `L` has `n` rows of length `n` and exact `0.0` strictly above the diagonal (`i < j < n`).
-- **Thin QR (`qr_thin_wide`, `qr_q_shape`, `qr_r_shape`, `qr_r_lower_zero`):** `qr_thin` rejects wide matrices (`m < n`) with `None`; whenever it succeeds, `Q` has `m` rows of length `n`, `R` has `n` rows of length `n`, and `R` has exact `0.0` strictly below the diagonal (`j < i < n`).
-- **Eigen & pseudoinverse (`sym_eigen_nonsquare`, `sym_eigen_shape`, `spd_pow_nonsquare`, `pinv_m`, `pinv_n`):** `sym_eigen` and `spd_pow` reject non-square matrices; whenever `sym_eigen` succeeds, `values` has length `n` and `vectors` has `n` rows of length `n`; `pinv` returns declared dimensions `n × m`.
-- **Dimension guards (`solve_lower_mismatch`, `solve_upper_mismatch`, `woodbury_solve_mismatch`, `lstsq_mismatch`, `wlstsq_mismatch`, `lstsq_mat_mismatch`, `project_orth_mismatch`, `lstsq_constrained_mismatch`, `procrustes_mismatch`):** every fallible solver returns `None` on incompatible shapes.
+Ops trust the `m × n` header on a `Mat` and the `n` on a `Vec`; they do not walk the rows to check it. `Mat.from_rows` builds a correct header from the rows. For a matrix from anywhere else (`Mat{...}` directly, `Mat.load`, `Mat.from_flat` on a short file), check `Mat.ok(a)` / `Vec.ok(v)` first. The `_ok` laws below say that well-formed inputs give well-formed outputs.
+
+Structural laws (every input):
+
+- **Parallel equivalence (`pmap_seq`, `pseq_get`):** the parallel fork-join map (`pmap`) gives the same list as the sequential loop (`pseq`) for every length. `scale`, `slice_cols`, `mul_diag`, `outer`, `matvec`, `matmul`, `gram` and `wgram` run on it.
+- **Transpose (`transpose_len`, `transpose_row_len`, `transpose_get`, `transpose_involutive`, `transpose_ok`):** transposing a rectangular `m × n` row list gives `n` rows of length `m`, swaps `(i, j)` for every index in or out of bounds, and is an involution. A well-formed `Mat` transposes to a well-formed `Mat`.
+- **Products (`matvec_entry`, `matmul_entry`, `matvec_ok`, `matmul_ok`):** each entry of `matvec` and `matmul` is the expected row-column dot product, and well-formed inputs give a well-formed result.
+- **Exact symmetry (`mirror_upper_sym`, `gram_sym`, `wgram_sym`, `spd_pow_sym`):** `get(M, i, j) == get(M, j, i)` bitwise for every `(i, j)`.
+- **Cholesky (`cholesky_shape`, `cholesky_upper_zero`):** whenever `cholesky` succeeds, `L` has `n` rows of length `n` and exact `0.0` above the diagonal.
+- **Thin QR (`qr_q_shape`, `qr_r_shape`, `qr_r_lower_zero`):** whenever `qr_thin` succeeds, `Q` has `m` rows of length `n`, `R` has `n` rows of length `n`, and `R` has exact `0.0` below the diagonal.
+- **Eigen (`sym_eigen_shape`):** whenever `sym_eigen` succeeds, `values` has length `n` and `vectors` has `n` rows of length `n`.
+- **SVD, pseudoinverse, Procrustes (`svd_thin_ok`, `pinv_ok`, `procrustes_shape`):** for a well-formed `m × n` matrix, `svd_thin` gives `U` (`m × k`), `s` (length `k`) and `V^T` (`k × n`) with headers that match their rows, and `pinv` gives a well-formed `n × m` matrix. Whenever `procrustes(A, B)` succeeds, the result is a well-formed `k × k` matrix, `k` the column count of `A`.
+
+Dimension guards: `cholesky_nonsquare`, `sym_eigen_nonsquare`, `spd_pow_nonsquare`, `qr_thin_wide`, `matmul_mismatch`, `solve_lower_mismatch`, `solve_upper_mismatch`, `woodbury_solve_mismatch`, `lstsq_mismatch`, `wlstsq_mismatch`, `lstsq_mat_mismatch`, `project_orth_mismatch`, `lstsq_constrained_mismatch`, `procrustes_mismatch`. Each says the op returns `None` when the headers don't fit. They compare headers only.
+
+Fixed examples: `from_rows_equal`, `from_rows_ragged`, `from_rows_ragged_last`, `from_rows_empty` (`Mat.from_rows` accepts rectangular lists and rejects ragged ones), and `mat_ok_rect`, `mat_ok_wrong_m`, `mat_ok_ragged`.
+
 
 Bend's checker does not reduce `F32` arithmetic, so numerical accuracy is verified against NumPy and SciPy in `check.py` instead.
 
@@ -40,8 +48,8 @@ Solve `min_x ||A x - b||_2` via thin Householder QR in Bend:
 
 ```bend
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as I
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as I
 
 def solve(ra: Result<&1, &1, U32 & String, L.Mat>, rb: Result<&1, &1, U32 & String, L.Vec>) -> String:
   match ra rb:
@@ -82,6 +90,7 @@ def main() -> IO(Unit):
 | `L.Vec.zeros(n: U32)`, `L.Vec.ones(n: U32)` | length-`n` constant `Vec` |
 | `L.Vec.get(v: Vec, i: Nat)` | `Maybe<&2, F32>` |
 | `L.Mat.from_rows(rows: List<&2, List<&2, F32>>)` | `Maybe<&2, Mat>`, `None` when two rows differ in length |
+| `L.Mat.ok(a)` / `L.Vec.ok(v)` | `Bool`, whether the declared header matches the rows (`m` rows of length `n`) or the data length |
 | `L.Mat.from_flat(a: A.F32Array, m: U32, n: U32)` | `Mat` from a row-major flat array |
 | `L.Mat.zeros(m, n)`, `L.Mat.eye(n)`, `L.Mat.diag(v)` | zero, identity, and diagonal `Mat` |
 | `L.Mat.get(a: Mat, i: Nat, j: Nat)` | `Maybe<&2, F32>` |
@@ -152,7 +161,7 @@ def main() -> IO(Unit):
 
 ```sh
 python3 linalg/check.py                   # needs bend, numpy, scipy
-cd linalg && bend PROOF.bend --verdict    # checks all 37 laws twice (including Lean-verified BendTT kernel)
+cd linalg && bend PROOF.bend --verdict    # checks all 45 laws twice (including Lean-verified BendTT kernel)
 ```
 
 `check.py` compiles `check.bend` and verifies every public operation against NumPy and SciPy across small, wide, square, parallel (`m >= 64`), ill-conditioned ($\kappa$ up to $10^4$), rank-deficient, zero-dimension, and error cases:

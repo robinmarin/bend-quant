@@ -2,7 +2,7 @@
 # Design notes: https://github.com/robinmarin/bend-quant/blob/main/linalg/DESIGN.md
 #
 # Public: Vec, Mat, QR, Eigen, SVD, Vec.from_list, Vec.from_flat, Vec.zeros,
-# Vec.ones, Vec.get, Mat.from_rows, Mat.from_flat, Mat.zeros, Mat.eye,
+# Vec.ones, Vec.get, Vec.ok, Mat.ok, Mat.from_rows, Mat.from_flat, Mat.zeros, Mat.eye,
 # Mat.diag, Mat.get, Mat.diag_vec, dot, norm1, norm2, vscale, vadd, vsub, axpy,
 # vmul, vdiv, outer, scale, madd, msub, frobenius, trace, transpose,
 # slice_rows, slice_cols, submatrix, diag_mul, mul_diag, matvec, matvec_t,
@@ -113,6 +113,17 @@ def Mat.from_rows(xs: List<&2, List<&2, F32>>) -> Maybe<&2, Mat>:
     case Con{+r, +t}:
       +n = List.length(&2, F32, r)
       Mat.rows.pick(Mat.rows.ok(r <> t, n), r <> t, n)
+
+# True when the declared m x n header matches the rows: m rows, each of length n.
+# Ops trust the header, so check this at trust boundaries (e.g. after Mat.load).
+def Mat.ok(a: Mat) -> Bool:
+  Mat{m, n, +rows} = a
+  Bool.and(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), Mat.rows.ok(rows, U32.to_nat(n)))
+
+# True when the declared length matches the data.
+def Vec.ok(v: Vec) -> Bool:
+  Vec{n, xs} = v
+  Nat.is_eq(List.length(&2, F32, xs), U32.to_nat(n))
 
 type Flat is Type:
   Flat{a: A.F32Array, rows: List<&2, List<&2, F32>>}
@@ -438,7 +449,7 @@ def trace.chk(ok: Bool, rows: List<&2, List<&2, F32>>) -> Maybe<&2, F32>:
       None{}
 
 def trace(a: Mat) -> Maybe<&2, F32>:
-  Mat{m, n, rows} = a
+  Mat{m, n, +rows} = a
   trace.chk(U32.is_eq(m, n), rows)
 
 # ---- transpose
@@ -538,7 +549,7 @@ def matvec.chk(ok: Bool, +m: U32, rows: List<&2, List<&2, F32>>, x: List<&2, F32
       None{}
 
 def matvec(a: Mat, x: Vec) -> Maybe<&2, Vec>:
-  Mat{m, n, rows} = a
+  Mat{m, n, +rows} = a
   Vec{nx, xs} = x
   matvec.chk(U32.is_eq(n, nx), m, rows, xs)
 
