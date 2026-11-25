@@ -2,7 +2,7 @@
 # values are verified against NumPy / SciPy in check.py. These laws prove
 # structural, validation, and causal invariants for every input.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
 import ./portfolio.bend as P
 
 # ---------------------------------------------------------------- FactorModel validation

@@ -1,7 +1,7 @@
 # Proofs of every law in LAWS.bend.
 # Checked with `bend PROOF.bend --verdict` (zero @unsafe, zero IO).
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
 import ./portfolio.bend as P
 import ./LAWS.bend as Laws
 

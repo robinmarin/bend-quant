@@ -1,6 +1,6 @@
 # portfolio: design notes
 
-`portfolio` implements portfolio risk decomposition, analytical and constrained mean-variance optimization, hedging, dynamic risk sizing, and ex-post performance attribution from Giuseppe Paleologo's *The Elements of Quantitative Investing* (Ch 4.5, 9–14) on top of `bend-quant-linalg@0.1.0.0`.
+`portfolio` implements portfolio risk decomposition, analytical and constrained mean-variance optimization, hedging, dynamic risk sizing, and ex-post performance attribution from Giuseppe Paleologo's *The Elements of Quantitative Investing* (Ch 4.5, 9–14) on top of `bend-quant-linalg@0.1.1.0`.
 
 ## Core architectural choices
 

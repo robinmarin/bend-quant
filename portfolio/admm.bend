@@ -11,7 +11,7 @@
 # Internal to portfolio; public entry point is portfolio.mvo_constrained.
 import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
 
 # ---------------------------------------------------------------- scalar helpers
 
