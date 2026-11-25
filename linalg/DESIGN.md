@@ -46,7 +46,7 @@ Bend's checker treats `F32` arithmetic as opaque, so numerical accuracy is check
 
 - **Header checks:** ops trust the `Mat`/`Vec` header. `Mat.from_rows` builds it from the rows; `Mat.ok` / `Vec.ok` check any other matrix.
 - **Parallel equivalence (`pmap_seq`):** parallel `pmap` returns the exact same list as sequential `pseq` for every size.
-- **Shape:** `transpose`, `matvec` and `matmul` map well-formed inputs to well-formed outputs; `cholesky`, `qr_thin` and `sym_eigen` have proved output shapes whenever they succeed. Other ops (`scale`, `madd`, `outer`, slicing, `svd_thin`, `pinv`, ...) have no shape law and are covered by `check.py`.
+- **Shape:** `transpose`, `matvec`, `matmul`, `svd_thin` and `pinv` map well-formed inputs to well-formed outputs; `cholesky`, `qr_thin`, `sym_eigen` and `procrustes` have proved output shapes whenever they succeed. Other ops (`scale`, `madd`, `outer`, slicing, ...) have no shape law and are covered by `check.py`.
 - **Transpose laws:** `transpose(transpose(A)) == A` and `get(transpose(A), j, i) == get(A, i, j)` for every rectangular matrix `A`.
 - **Entry indexing:** `matvec` and `matmul` route the expected row and column to each output entry.
 - **Symmetry:** `get(M, i, j) == get(M, j, i)` for `gram(A)`, `wgram(A, w)` and `spd_pow(A, p)`, for all indices.

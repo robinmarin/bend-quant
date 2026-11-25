@@ -13,7 +13,7 @@ The types and defs in the API table below are the public ones. Every other def i
 
 ## What is proved and what is tested
 
-`LAWS.bend` states 42 laws and `PROOF.bend` proves all of them with zero `@unsafe` and no IO imports. 21 are structural laws over every input, 14 are dimension guards, and 7 are fixed examples.
+`LAWS.bend` states 45 laws and `PROOF.bend` proves all of them with zero `@unsafe` and no IO imports. 24 are structural laws over every input, 14 are dimension guards, and 7 are fixed examples. `PROOF.bend` uses `bend-mathlib@0.1.0.0` for generic list lemmas.
 
 Ops trust the `m × n` header on a `Mat` and the `n` on a `Vec`; they do not walk the rows to check it. `Mat.from_rows` builds a correct header from the rows. For a matrix from anywhere else (`Mat{...}` directly, `Mat.load`, `Mat.from_flat` on a short file), check `Mat.ok(a)` / `Vec.ok(v)` first. The `_ok` laws below say that well-formed inputs give well-formed outputs.
 
@@ -26,12 +26,12 @@ Structural laws (every input):
 - **Cholesky (`cholesky_shape`, `cholesky_upper_zero`):** whenever `cholesky` succeeds, `L` has `n` rows of length `n` and exact `0.0` above the diagonal.
 - **Thin QR (`qr_q_shape`, `qr_r_shape`, `qr_r_lower_zero`):** whenever `qr_thin` succeeds, `Q` has `m` rows of length `n`, `R` has `n` rows of length `n`, and `R` has exact `0.0` below the diagonal.
 - **Eigen (`sym_eigen_shape`):** whenever `sym_eigen` succeeds, `values` has length `n` and `vectors` has `n` rows of length `n`.
+- **SVD, pseudoinverse, Procrustes (`svd_thin_ok`, `pinv_ok`, `procrustes_shape`):** for a well-formed `m × n` matrix, `svd_thin` gives `U` (`m × k`), `s` (length `k`) and `V^T` (`k × n`) with headers that match their rows, and `pinv` gives a well-formed `n × m` matrix. Whenever `procrustes(A, B)` succeeds, the result is a well-formed `k × k` matrix, `k` the column count of `A`.
 
 Dimension guards: `cholesky_nonsquare`, `sym_eigen_nonsquare`, `spd_pow_nonsquare`, `qr_thin_wide`, `matmul_mismatch`, `solve_lower_mismatch`, `solve_upper_mismatch`, `woodbury_solve_mismatch`, `lstsq_mismatch`, `wlstsq_mismatch`, `lstsq_mat_mismatch`, `project_orth_mismatch`, `lstsq_constrained_mismatch`, `procrustes_mismatch`. Each says the op returns `None` when the headers don't fit. They compare headers only.
 
 Fixed examples: `from_rows_equal`, `from_rows_ragged`, `from_rows_ragged_last`, `from_rows_empty` (`Mat.from_rows` accepts rectangular lists and rejects ragged ones), and `mat_ok_rect`, `mat_ok_wrong_m`, `mat_ok_ragged`.
 
-`svd_thin`, `pinv` and `procrustes` have no shape laws; `check.py` covers them.
 
 Bend's checker does not reduce `F32` arithmetic, so numerical accuracy is verified against NumPy and SciPy in `check.py` instead.
 
@@ -161,7 +161,7 @@ def main() -> IO(Unit):
 
 ```sh
 python3 linalg/check.py                   # needs bend, numpy, scipy
-cd linalg && bend PROOF.bend --verdict    # checks all 42 laws twice (including Lean-verified BendTT kernel)
+cd linalg && bend PROOF.bend --verdict    # checks all 45 laws twice (including Lean-verified BendTT kernel)
 ```
 
 `check.py` compiles `check.bend` and verifies every public operation against NumPy and SciPy across small, wide, square, parallel (`m >= 64`), ill-conditioned ($\kappa$ up to $10^4$), rank-deficient, zero-dimension, and error cases:

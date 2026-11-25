@@ -475,6 +475,41 @@ law spd_pow_sym:
   for +j: Nat
   {mm_get(L.spd_pow(a, p), i, j) == mm_get(L.spd_pow(a, p), j, i) : Maybe<&2, F32>}
 
+# ---------------------------------------------------------------- SVD, pseudoinverse & Procrustes shapes
+
+# U is m x k, s has length k, V^T is k x n (k = length of s), and every header
+# matches its rows. All in Nat so the law needs no U32 arithmetic.
+def svd_shape(+um: Nat, +un: Nat, +urows: List<&2, List<&2, F32>>, +k: Nat, +sigs: List<&2, F32>, +vm: Nat, +vn: Nat, +vrows: List<&2, List<&2, F32>>, +m: Nat, +n: Nat) -> Bool:
+  Bool.and(Nat.is_eq(um, m), Bool.and(Nat.is_eq(un, k), Bool.and(Nat.is_eq(vm, k), Bool.and(Nat.is_eq(vn, n), Bool.and(Nat.is_eq(List.length(&2, List<&2, F32>, urows), m), Bool.and(L.Mat.rows.ok(urows, k), Bool.and(Nat.is_eq(List.length(&2, F32, sigs), k), Bool.and(Nat.is_eq(List.length(&2, List<&2, F32>, vrows), k), L.Mat.rows.ok(vrows, n)))))))))
+
+def svd_ok(sv: L.SVD, +m: U32, +n: U32) -> Bool:
+  L.SVD{L.Mat{um, un, urows}, L.Vec{k, sigs}, L.Mat{vm, vn, vrows}} = sv
+  svd_shape(U32.to_nat(um), U32.to_nat(un), urows, U32.to_nat(k), sigs, U32.to_nat(vm), U32.to_nat(vn), vrows, U32.to_nat(m), U32.to_nat(n))
+
+# svd_thin of a well-formed m x n matrix is U (m x k), s (k), V^T (k x n).
+law svd_thin_ok:
+  for +a: L.Mat
+  for +h: {L.Mat.ok(a) == True{} : Bool}
+  {svd_ok(L.svd_thin(a), mat_m(a), mat_n(a)) == True{} : Bool}
+
+# pinv of a well-formed m x n matrix is a well-formed n x m matrix.
+law pinv_ok:
+  for +a: L.Mat
+  for +tol: F32
+  for +h: {L.Mat.ok(a) == True{} : Bool}
+  {L.Mat.ok(L.pinv(a, tol)) == True{} : Bool}
+
+def mshape(+x: L.Mat, +p: Nat, +q: Nat) -> Bool:
+  Bool.and(L.Mat.ok(x), Bool.and(Nat.is_eq(U32.to_nat(mat_m(x)), p), Nat.is_eq(U32.to_nat(mat_n(x)), q)))
+
+# Whenever procrustes(A, B) succeeds, X is a well-formed k x k matrix (k = columns of A).
+law procrustes_shape:
+  for +a: L.Mat
+  for +b: L.Mat
+  for +x: L.Mat
+  for +hp: {L.procrustes(a, b) == Some{x} : Maybe<&2, L.Mat>}
+  {mshape(x, U32.to_nat(mat_n(a)), U32.to_nat(mat_n(a))) == True{} : Bool}
+
 # Mismatched shapes return None for procrustes.
 law procrustes_mismatch:
   for +ma: U32
