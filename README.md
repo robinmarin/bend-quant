@@ -9,7 +9,7 @@ Every package separates pure math from file IO (`io.bend`), proves its structura
 | Package | BendHub | Scope | Key proved laws | Docs & Benchmarks |
 |---|---|---|---|---|
 | **[signal](signal/)** | `bend-quant-signal@0.1.0.0` | Cross-sectional signal evaluation: Spearman rank IC, Pearson IC, summary stats, Newey–West $t$, causal transforms (`ewma`, `rolling_mean`, `zscore`, `winsorize`, `rank`) | No-lookahead `forward_rank_ic`, strict `scan` causality, exact NaN pair filtering, average-rank merge sort, `pmap` equivalence | [README](signal/README.md) · [DESIGN](signal/DESIGN.md) · [Benchmarks](signal/bench/README.md) |
-| **[linalg](linalg/)** | `bend-quant-linalg@0.1.1.0` | Dense `F32` linear algebra: Cholesky, triangular solves, Woodbury & Matrix Determinant Lemma, thin Householder QR, OLS/WLS/constrained least squares, cyclic Jacobi eigen, SPD powers, thin SVD, pseudoinverse, Procrustes | 42 laws (21 structural, 14 dimension guards, 7 fixed examples): `Mat.ok` header checks preserved by `transpose`, `matvec`, `matmul`; transpose involution, exact bitwise symmetry (`gram`, `wgram`, `spd_pow`), triangular zero structure (`cholesky`, `qr_thin`), `pmap` equivalence, dimension guards | [README](linalg/README.md) · [DESIGN](linalg/DESIGN.md) · [Benchmarks](linalg/bench/README.md) |
+| **[linalg](linalg/)** | `bend-quant-linalg@0.1.0.0` | Dense `F32` linear algebra: Cholesky, triangular solves, Woodbury & Matrix Determinant Lemma, thin Householder QR, OLS/WLS/constrained least squares, cyclic Jacobi eigen, SPD powers, thin SVD, pseudoinverse, Procrustes | 37 laws: rectangular validation, transpose involution, exact bitwise symmetry (`gram`, `wgram`, `spd_pow`), triangular zero structure (`cholesky`, `qr_thin`), `pmap` equivalence, dimension guards | [README](linalg/README.md) · [DESIGN](linalg/DESIGN.md) · [Benchmarks](linalg/bench/README.md) |
 | **[portfolio](portfolio/)** | `bend-quant-portfolio@0.1.0.0` | Portfolio construction, risk & attribution (Paleologo *The Elements of Quantitative Investing*, Ch 4.5, 9–14): factor risk decomposition, analytical MVO, Woodbury-preconditioned ADMM constrained QP + L1/GMV solver, hedging, Kelly & Grossman–Zhou sizing, ex-post & causal multi-period attribution | 33 laws: `FactorModel` validation, no-lookahead `forward_pnl`, strict `grossman_zhou_path` causality, `pmap` equivalence, 24 dimension guards | [README](portfolio/README.md) · [DESIGN](portfolio/DESIGN.md) · [Benchmarks](portfolio/bench/README.md) |
 | **[risk](risk/)** | `bend-quant-risk@0.1.0.0` | Factor & covariance estimation and risk evaluation (Paleologo *The Elements of Quantitative Investing*, Ch 4–7): model rotations/projection/pushout, group risk, QLIKE/QDIST/Mahalanobis/MVP/BETAERR, Ledoit–Wolf/DCC/STVU/Newey–West/Cohen HAC/Cai clusters/causal log-MAD winsorization/IR linking/currency rebasing, WLS & constrained fundamental models, PCA/fast subspace SVD/PPCA/RMT/Bai–Ng/Procrustes statistical models | 41 laws: 12 exact bitwise symmetry laws, 4 strict causality laws (`winsorize_log_mad`, `make_windows`), 4 no-lookahead OOS evaluation laws, `pmap` equivalence, 19 dimension/parameter guards | [README](risk/README.md) · [DESIGN](risk/DESIGN.md) · [Benchmarks](risk/bench/README.md) |
 
@@ -17,7 +17,7 @@ Every package separates pure math from file IO (`io.bend`), proves its structura
 
 ```bend
 import bend-quant-signal@0.1.0.0/signal.bend as S
-import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.0.0/linalg.bend as L
 import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
 import bend-quant-risk@0.1.0.0/risk.bend as R
 ```
@@ -27,7 +27,6 @@ File loaders live in each package's `io.bend` (wrapping `bend-kit-f32array@0.2.1
 ## Design principles
 
 - **Proved invariants, tested numerics:** Bend's type checker verifies structural invariants for *all* inputs—no-lookahead date alignment, strict causality, symmetry, triangular zero structure, and parallel-to-sequential equivalence—while `check.py` in each package cross-checks floating-point values against reference Python libraries.
-- **Headers are trusted:** ops read the `m × n` / `n` header on `Mat`, `Vec` and `Panel` without walking the rows. `from_rows` builds a correct header; `L.Mat.ok` / `L.Vec.ok` check one from anywhere else. Dimension-guard laws compare headers only.
 - **Hybrid data layout:** Public APIs expose immutable `Data` row lists (`Panel`, `Mat`, `Vec`, `FactorModel`) that are freely reusable and proof-friendly, while hot inner loops (`cholesky`, `qr_thin`, `gram`, `sym_eigen`, `admm.bend`, `cov.bend`, and `subspace_svd.bend`) pack into flat `Array<F32>` buffers for cache-friendly execution.
 - **Shared causal return convention:** Across `signal`, `portfolio`, and `risk`, row $j$ of a return matrix holds the one-period return over $(j - 1, j]$. Forward evaluation (`forward_rank_ic`, `forward_pnl`, `forward_attribute`, `qdist`, `mahalanobis_test`, `mvp_test`, `portfolio_vol_eval`) structurally pairs row $t$ with row $t + 1$, making same-day lookahead unrepresentable.
 
