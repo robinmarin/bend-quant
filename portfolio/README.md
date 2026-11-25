@@ -7,7 +7,7 @@ import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import bend-quant-portfolio@0.1.1.0/io.bend as PI
 ```
 
-From a clone, import `./portfolio/portfolio.bend` and `./portfolio/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.0.0`'s `Vec` and `Mat` (sharing `List<&2, List<&2, F32>>` rows with `bend-quant-signal@0.1.0.0` with zero copying). `io.bend` wraps `bend-quant-linalg@0.1.0.0/io.bend` to load `FactorModel` binary files.
+From a clone, import `./portfolio/portfolio.bend` and `./portfolio/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.1.0`'s `Vec` and `Mat` (sharing `List<&2, List<&2, F32>>` rows with `bend-quant-signal@0.1.0.0` with zero copying). `io.bend` wraps `bend-quant-linalg@0.1.1.0/io.bend` to load `FactorModel` binary files.
 
 The types and defs in the API table below are the public ones. Every other def is internal: the laws and proofs name them, and they can change in any version.
 
@@ -35,8 +35,8 @@ Load a factor model (`B` $N \times K$, `cov_f` $K \times K$, `idio_var` $N$) and
 
 ```bend
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
 import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import bend-quant-portfolio@0.1.1.0/io.bend as PI
 

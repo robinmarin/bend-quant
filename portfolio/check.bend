@@ -1,8 +1,8 @@
 # CLI test driver for portfolio (Milestones 1-4).
 # Invoked by check.py to verify every public function against NumPy / SciPy.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
 import ./portfolio.bend as P
 import ./io.bend as PI
 

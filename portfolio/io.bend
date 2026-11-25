@@ -4,8 +4,8 @@
 #
 # Public: FactorModel.load.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-linalg@0.1.0.0/io.bend as LI
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/io.bend as LI
 import ./portfolio.bend as P
 
 def load.fm.from_maybe(mfm: Maybe<&2, P.FactorModel>) -> Result<&1, &1, U32 & String, P.FactorModel>:

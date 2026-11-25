@@ -2,13 +2,13 @@
 # Woodbury-ADMM constrained/turnover-aware MVO), hedging, dynamic risk sizing,
 # and ex-post performance attribution over float32 vectors and matrices.
 #
-# Built on bend-quant-linalg@0.1.0.0 following Paleologo's
+# Built on bend-quant-linalg@0.1.1.0 following Paleologo's
 # "The Elements of Quantitative Investing" (Ch 4.5, 9-14).
 # Every non-public def is internal; LAWS.bend and PROOF.bend name internals and
 # they can change in any version.
 import Base
 import bend-kit-f32array@0.2.1.0/f32array.bend as A
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
 import ./admm.bend as ADMM
 
 # ---------------------------------------------------------------- types
@@ -136,18 +136,8 @@ def FactorModel.new.pos(ok: Bool, b: L.Mat, cov_f: L.Mat, idio_var: L.Vec) -> Ma
     case False{}:
       None{}
 
-# The header matches the rows: m rows, each of length n.
-# ponytail: same as L.Mat.ok in linalg 0.1.1.0; switch once that is published.
-def mat_ok(a: L.Mat) -> Bool:
-  L.Mat{m, n, +rows} = a
-  Bool.and(Nat.is_eq(List.length(&2, List<&2, F32>, rows), U32.to_nat(m)), L.Mat.rows.ok(rows, U32.to_nat(n)))
-
-def vec_ok(v: L.Vec) -> Bool:
-  L.Vec{n, xs} = v
-  Nat.is_eq(List.length(&2, F32, xs), U32.to_nat(n))
-
 def fm_rows_ok(b: L.Mat, cov_f: L.Mat, idio_var: L.Vec) -> Bool:
-  Bool.and(mat_ok(b), Bool.and(mat_ok(cov_f), vec_ok(idio_var)))
+  Bool.and(L.Mat.ok(b), Bool.and(L.Mat.ok(cov_f), L.Vec.ok(idio_var)))
 
 def FactorModel.new.rows(ok: Bool, b: L.Mat, cov_f: L.Mat, +idio_var: L.Vec) -> Maybe<&2, FactorModel>:
   match ok:
