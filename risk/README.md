@@ -7,7 +7,7 @@ import bend-quant-risk@0.1.1.0/risk.bend as R
 import bend-quant-risk@0.1.1.0/io.bend as RI
 ```
 
-From a clone, import `./risk/risk.bend` and `./risk/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.0.0`'s `Vec`/`Mat` and `bend-quant-portfolio@0.1.0.0`'s `FactorModel` with zero conversion boilerplate. Return panels are `T × N` (`L.Mat`), where row `t` is the one-period return over `(t - 1, t]`.
+From a clone, import `./risk/risk.bend` and `./risk/io.bend` instead. All public types are `Data` and operate directly on `bend-quant-linalg@0.1.1.0`'s `Vec`/`Mat` and `bend-quant-portfolio@0.1.1.0`'s `FactorModel` with zero conversion boilerplate. Return panels are `T × N` (`L.Mat`), where row `t` is the one-period return over `(t - 1, t]`.
 
 The types and defs in the API table below are the public ones. Every other def is internal: the laws and proofs name them, and they can change in any version.
 
@@ -40,8 +40,8 @@ Fit a two-stage weighted statistical factor model (`K = 15`) on a `250 × 500` r
 
 ```bend
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import bend-quant-risk@0.1.1.0/risk.bend as R
 import bend-quant-risk@0.1.1.0/io.bend as RI
 

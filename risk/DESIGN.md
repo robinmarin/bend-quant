@@ -1,11 +1,11 @@
 # risk: design notes
 
-`risk` implements factor model transformations, out-of-sample risk model evaluation, fundamental factor models & covariance estimation, and statistical factor models (PCA / SVD / PPCA / RMT / Procrustes alignment) from Giuseppe Paleologo's *The Elements of Quantitative Investing* (Chapters 4–7), built directly on `bend-quant-linalg@0.1.0.0` and `bend-quant-portfolio@0.1.0.0`.
+`risk` implements factor model transformations, out-of-sample risk model evaluation, fundamental factor models & covariance estimation, and statistical factor models (PCA / SVD / PPCA / RMT / Procrustes alignment) from Giuseppe Paleologo's *The Elements of Quantitative Investing* (Chapters 4–7), built directly on `bend-quant-linalg@0.1.1.0` and `bend-quant-portfolio@0.1.1.0`.
 
 ## Core architectural choices
 
 ### 1. Zero-boilerplate ecosystem integration (`P.FactorModel`)
-Every estimator (`fit_fundamental_model`, `ppca_fit`, `fit_statistical_model`, `rolling_fundamental_models`, `rolling_statistical_models`) returns `bend-quant-portfolio@0.1.0.0`'s `P.FactorModel{b, cov_f, idio_var}` directly, and every Ch 4–5 transformation and evaluator consumes `P.FactorModel` directly. Return panels follow `signal` and `portfolio`'s convention (`T × N` row-major `L.Mat`, where row `t` is the one-period return over `(t - 1, t]`).
+Every estimator (`fit_fundamental_model`, `ppca_fit`, `fit_statistical_model`, `rolling_fundamental_models`, `rolling_statistical_models`) returns `bend-quant-portfolio@0.1.1.0`'s `P.FactorModel{b, cov_f, idio_var}` directly, and every Ch 4–5 transformation and evaluator consumes `P.FactorModel` directly. Return panels follow `signal` and `portfolio`'s convention (`T × N` row-major `L.Mat`, where row `t` is the one-period return over `(t - 1, t]`).
 
 ### 2. Zero $N \times N$ dense covariance materialization (Ch 4 & Ch 5)
 Across all factor-model transformations and out-of-sample evaluators, the full $N \times N$ return covariance $\Omega_r = B \Omega_f B^\top + \Omega_\varepsilon$ is never formed:

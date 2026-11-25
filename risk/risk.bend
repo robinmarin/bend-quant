@@ -2,13 +2,13 @@
 # out-of-sample risk evaluation, fundamental & statistical factor models
 # following Giuseppe Paleologo's "The Elements of Quantitative Investing" (Ch 4-7).
 #
-# Built on bend-quant-linalg@0.1.0.0 and bend-quant-portfolio@0.1.0.0 (sharing
+# Built on bend-quant-linalg@0.1.1.0 and bend-quant-portfolio@0.1.1.0 (sharing
 # P.FactorModel, L.Mat, and L.Vec directly with zero conversion).
 # Every non-public def is internal; LAWS.bend and PROOF.bend name internals and
 # they can change in any version.
 import Base
-import bend-quant-linalg@0.1.0.0/linalg.bend as L
-import bend-quant-portfolio@0.1.0.0/portfolio.bend as P
+import bend-quant-linalg@0.1.1.0/linalg.bend as L
+import bend-quant-portfolio@0.1.1.0/portfolio.bend as P
 import ./cov.bend as C
 import ./subspace_svd.bend as SSVD
 
